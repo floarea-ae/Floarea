@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
   errorText: { fontFamily: FONTS.body, fontSize: 16, color: COLORS.textMuted, textAlign: 'center', marginTop: 40 },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center' },
-  imageContainer: { width, aspectRatio: 4 / 5, backgroundColor: COLORS.surface },
+  imageContainer: { width, height: width * 1.25, backgroundColor: COLORS.surface },
   mainImage: { width: '100%', height: '100%' },
   thumbnailRow: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
   thumbnail: { width: 60, height: 60, borderRadius: 2, overflow: 'hidden', borderWidth: 2, borderColor: 'transparent' },
