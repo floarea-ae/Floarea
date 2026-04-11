@@ -1,0 +1,108 @@
+{
+  "theme": "light",
+  "archetype": "Archetype 1 (Organic & Earthy) with Archetype 5 (Jewel & Luxury) Touches",
+  "brand_identity": {
+    "name": "Floarea",
+    "taglines": [
+      "Inspired by Nature",
+      "Luxury Blooms, Delivered With Love",
+      "Floral Art for Life's Most Beautiful Moments"
+    ],
+    "vibe": "Premium, organic, high-end editorial, sensory, exclusive."
+  },
+  "typography": {
+    "fonts": {
+      "heading": "Cormorant Garamond, serif",
+      "body": "Outfit, sans-serif"
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl font-light tracking-tight text-[#1C1B1A]",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl font-light tracking-tight text-[#1C1B1A]",
+      "h3": "text-xl sm:text-2xl font-medium tracking-tight text-[#1A2E20]",
+      "body": "text-base font-light leading-relaxed text-[#5C5A56]",
+      "overline": "text-xs font-semibold tracking-[0.2em] uppercase text-[#1A2E20]"
+    }
+  },
+  "colors": {
+    "background": "#F9F8F6",
+    "surface": "#F2EFE9",
+    "surface_glass": "bg-white/70 backdrop-blur-xl backdrop-saturate-150 border border-white/40",
+    "primary": "#1A2E20",
+    "primary_hover": "#2A4531",
+    "text_main": "#1C1B1A",
+    "text_muted": "#5C5A56",
+    "accent": "#8B2332",
+    "border": "#E5E0D8"
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous spacing. Frame products like art pieces in a gallery. Heavy use of negative space.",
+    "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "grid_product": "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8",
+    "grid_bento": "grid-cols-1 md:grid-cols-8 lg:grid-cols-12 gap-8",
+    "radii": "rounded-none or rounded-sm (2px). Luxury brands avoid heavy pill-shapes.",
+    "mobile_constraints": "Images must not exceed 80vh. Use max-h-[80vh] md:max-h-none."
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#1A2E20] text-white hover:bg-[#2A4531] transition-colors px-8 py-4 text-sm tracking-widest uppercase",
+      "secondary": "border border-[#1A2E20]/20 bg-transparent text-[#1A2E20] hover:bg-[#F2EFE9] px-8 py-4 text-sm tracking-widest uppercase",
+      "icon": "p-3 rounded-full bg-[#F2EFE9] hover:bg-white transition-all shadow-sm"
+    },
+    "cards": {
+      "product": "group cursor-pointer border-none bg-transparent flex flex-col gap-4",
+      "image_wrapper": "relative overflow-hidden aspect-[4/5] bg-[#F2EFE9]",
+      "category": "relative overflow-hidden group h-full min-h-[400px]"
+    },
+    "header": "fixed top-0 w-full z-50 bg-white/80 backdrop-blur-xl border-b border-[#1A2E20]/5",
+    "mobile_nav": "fixed bottom-0 w-full z-50 bg-white/90 backdrop-blur-lg border-t border-[#1A2E20]/5 pb-safe pt-2 px-6 flex justify-between items-center md:hidden"
+  },
+  "media": {
+    "hero_banner": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/a06552a2-c265-40ba-8f47-09377686258f/images/7a38dfc4f58944083838abb9587b764e9809560d2e9979a74da00d8440727956.png",
+      "description": "High-end luxury red roses in a black box, dimly lit room.",
+      "placement": "Home page hero section overlay (Must use bg-black/40 to bg-black/50 gradient for text contrast)."
+    },
+    "category_fresh": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/a06552a2-c265-40ba-8f47-09377686258f/images/bb43e32f1de35ccdae4ff274e261cafb9eec619a1fdfd82effeb85a816e39db2.png",
+      "description": "Elegant pristine white orchids and hydrangeas against beige plaster.",
+      "placement": "Fresh Flowers Category Card / Banner."
+    },
+    "product_sample_1": {
+      "url": "https://images.unsplash.com/photo-1760373071711-960143464e34?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MDV8MHwxfHNlYXJjaHwzfHxsdXh1cnklMjBmbG93ZXIlMjBib3VxdWV0JTIwcm9zZXN8ZW58MHx8fHwxNzc1ODkxMzc1fDA&ixlib=rb-4.1.0&q=85",
+      "description": "Close-up of dewy red roses.",
+      "placement": "Best Sellers Product Image / Product Details showcase."
+    },
+    "product_sample_2": {
+      "url": "https://images.unsplash.com/photo-1771164802337-3c980073df4f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MDV8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBmbG93ZXIlMjBib3VxdWV0JTIwcm9zZXN8ZW58MHx8fHwxNzc1ODkxMzc1fDA&ixlib=rb-4.1.0&q=85",
+      "description": "Large bouquet of white roses.",
+      "placement": "Special Occasions / Wedding category."
+    }
+  },
+  "motion": {
+    "hover": "Image slow scale (scale-105 duration-700 ease-out) on product cards and categories. Never scale the container itself, only the inner image.",
+    "page_transition": "Fade in with slight upward translation (framer-motion).",
+    "cart_drawer": "Slide in from right, smooth damping."
+  },
+  "icons_and_assets": {
+    "library": "lucide-react",
+    "whatsapp_integration": "Prominent floating action button or mobile nav icon. Number: +971501311930. Use brand green (#1A2E20) or classic WhatsApp green (#25D366) styled minimally.",
+    "payment": "Paymob integration requires clear visual trust badges (Visa, Mastercard, Apple Pay)."
+  },
+  "specific_functionalities": {
+    "product_catalog": "Categories: Forever Roses, Fresh Flowers, Best Sellers, Special Occasions.",
+    "product_details": "Price MUST be displayed as 'Dhs.'. Accordion for Description, Care Instructions, Delivery Info.",
+    "checkout_flow": "Slide-out cart drawer. Clean, minimal checkout stepping. WebView integration for Paymob.",
+    "wishlist": "Heart icon absolute-positioned on top right of product cards. Micro-animation when toggled.",
+    "user_auth": "Minimalist forms using Shadcn inputs. No heavy shadows."
+  },
+  "instructions_to_main_agent": [
+    "Load 'Cormorant Garamond' and 'Outfit' fonts from Google Fonts.",
+    "Install 'lucide-react' for all iconography.",
+    "Override default Tailwind config with the custom color palette provided above. Map them as 'brand-primary', 'brand-surface', etc.",
+    "Use pure HTML/Tailwind for structural creative marketing sections, and deeply customized Shadcn/UI for logic-heavy parts (Select, Accordion, Dialog/Drawer).",
+    "For product images, ensure aspect ratio consistency (e.g., aspect-[4/5]) with object-cover.",
+    "Add 'data-testid' to all interactive elements (e.g., data-testid='add-to-cart-button', data-testid='whatsapp-contact').",
+    "Mimic mobile-native feel for PWA/Web-App: sticky bottom navigation, large tap targets, and safe-area paddings.",
+    "Build the bento grid for categories with asymmetry (e.g., one large dominant category card, two smaller stacked ones)."
+  ]
+}
