@@ -2,16 +2,17 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type WishlistItem = {
-  product_id: string;
+  handle: string;
   name: string;
   price: number;
   image: string;
+  variant_id: string;
 };
 
 type WishlistContextType = {
   items: WishlistItem[];
   toggleItem: (product: WishlistItem) => void;
-  isInWishlist: (productId: string) => boolean;
+  isInWishlist: (handle: string) => boolean;
   count: number;
 };
 
@@ -32,14 +33,14 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
 
   const toggleItem = useCallback((product: WishlistItem) => {
     setItems(prev => {
-      const exists = prev.find(i => i.product_id === product.product_id);
-      if (exists) return prev.filter(i => i.product_id !== product.product_id);
+      const exists = prev.find(i => i.handle === product.handle);
+      if (exists) return prev.filter(i => i.handle !== product.handle);
       return [...prev, product];
     });
   }, []);
 
-  const isInWishlist = useCallback((productId: string) => {
-    return items.some(i => i.product_id === productId);
+  const isInWishlist = useCallback((handle: string) => {
+    return items.some(i => i.handle === handle);
   }, [items]);
 
   return (

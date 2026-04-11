@@ -14,15 +14,11 @@ export default function WishlistScreen() {
   if (items.length === 0) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Wishlist</Text>
-        </View>
+        <View style={styles.header}><Text style={styles.title}>Wishlist</Text></View>
         <View style={styles.emptyState}>
-          <View style={styles.emptyIcon}>
-            <Ionicons name="heart-outline" size={48} color={COLORS.border} />
-          </View>
+          <View style={styles.emptyIcon}><Ionicons name="heart-outline" size={48} color={COLORS.border} /></View>
           <Text style={styles.emptyTitle}>Your wishlist is empty</Text>
-          <Text style={styles.emptySubtitle}>Save your favorite flowers for later</Text>
+          <Text style={styles.emptySubtitle}>Save your favorite flowers</Text>
           <TouchableOpacity testID="browse-btn" style={styles.browseBtn} onPress={() => router.push('/shop')}>
             <Text style={styles.browseBtnText}>BROWSE FLOWERS</Text>
           </TouchableOpacity>
@@ -32,10 +28,8 @@ export default function WishlistScreen() {
   }
 
   const productData = items.map(i => ({
-    id: i.product_id,
-    name: i.name,
-    price: i.price,
-    image: i.image,
+    handle: i.handle, title: i.name, price: i.price,
+    image: i.image, variant_id: i.variant_id,
   }));
 
   return (
@@ -46,7 +40,7 @@ export default function WishlistScreen() {
       </View>
       <FlatList
         data={productData}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.handle}
         numColumns={2}
         contentContainerStyle={styles.grid}
         columnWrapperStyle={styles.gridRow}
@@ -64,7 +58,6 @@ const styles = StyleSheet.create({
   countText: { fontFamily: FONTS.body, fontSize: 13, color: COLORS.textMuted, marginBottom: 6 },
   grid: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40 },
   gridRow: { justifyContent: 'space-between' },
-
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
   emptyIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
   emptyTitle: { fontFamily: FONTS.heading, fontSize: 22, color: COLORS.text },

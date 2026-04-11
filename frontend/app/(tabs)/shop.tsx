@@ -9,50 +9,39 @@ import ProductCard from '../../src/components/ProductCard';
 import WhatsAppButton from '../../src/components/WhatsAppButton';
 
 export default function ShopScreen() {
-  const params = useLocalSearchParams<{ category?: string }>();
+  const params = useLocalSearchParams<{ collection?: string }>();
   const [products, setProducts] = useState<any[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>(params.category || '');
+  const [collections, setCollections] = useState<any[]>([]);
+  const [selectedCollection, setSelectedCollection] = useState<string>(params.collection || '');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/categories').then(d => setCategories(d.categories)).catch(console.error);
+    api.get('/collections').then(d => setCollections(d.collections || [])).catch(console.error);
   }, []);
 
-  useEffect(() => {
-    loadProducts();
-  }, [selectedCategory]);
+  useEffect(() => { loadProducts(); }, [selectedCollection]);
 
   async function loadProducts() {
     setLoading(true);
     try {
-      let path = '/products';
-      const queryParams: string[] = [];
-      if (selectedCategory) queryParams.push(`category=${selectedCategory}`);
-      if (search) queryParams.push(`search=${encodeURIComponent(search)}`);
-      if (queryParams.length) path += '?' + queryParams.join('&');
+      let path = '/products?first=30';
+      if (selectedCollection) path += `&collection=${selectedCollection}`;
+      if (search) path += `&search=${encodeURIComponent(search)}`;
       const data = await api.get(path);
-      setProducts(data.products);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+      setProducts(data.products || []);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   }
 
-  const handleSearch = useCallback(() => {
-    loadProducts();
-  }, [search, selectedCategory]);
+  const handleSearch = useCallback(() => { loadProducts(); }, [search, selectedCollection]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>Shop</Text>
-        <Text style={styles.subtitle}>Luxury flowers & gifts</Text>
+        <Text style={styles.subtitle}>Real-time from Floarea.ae</Text>
       </View>
 
-      {/* Search */}
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>
           <Ionicons name="search" size={18} color={COLORS.textMuted} />
@@ -74,35 +63,33 @@ export default function ShopScreen() {
         </View>
       </View>
 
-      {/* Category Chips */}
       <View style={styles.chipScroll}>
         <FlatList
           horizontal
           showsHorizontalScrollIndicator={false}
-          data={[{ id: '', name: 'All', slug: '' }, ...categories]}
-          keyExtractor={(item) => item.id || 'all'}
+          data={[{ handle: '', title: 'All' }, ...collections]}
+          keyExtractor={(item) => item.handle === '' ? 'filter-all' : item.handle}
           contentContainerStyle={styles.chipContainer}
           renderItem={({ item }) => (
             <TouchableOpacity
-              testID={`filter-${item.slug || 'all'}`}
-              style={[styles.chip, selectedCategory === item.slug && styles.chipActive]}
-              onPress={() => setSelectedCategory(item.slug)}
+              testID={`filter-${item.handle || 'all'}`}
+              style={[styles.chip, selectedCollection === item.handle && styles.chipActive]}
+              onPress={() => setSelectedCollection(item.handle)}
             >
-              <Text style={[styles.chipText, selectedCategory === item.slug && styles.chipTextActive]}>
-                {item.name}
+              <Text style={[styles.chipText, selectedCollection === item.handle && styles.chipTextActive]}>
+                {item.title}
               </Text>
             </TouchableOpacity>
           )}
         />
       </View>
 
-      {/* Products Grid */}
       {loading ? (
         <ActivityIndicator size="large" color={COLORS.primary} style={{ flex: 1 }} />
       ) : (
         <FlatList
           data={products}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.handle}
           numColumns={2}
           contentContainerStyle={styles.grid}
           columnWrapperStyle={styles.gridRow}
@@ -126,27 +113,17 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 },
   title: { fontFamily: FONTS.headingLight, fontSize: 32, color: COLORS.text },
   subtitle: { fontFamily: FONTS.body, fontSize: 13, color: COLORS.textMuted, marginTop: 2 },
-
   searchRow: { paddingHorizontal: 16, marginTop: 16 },
-  searchBox: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface,
-    borderRadius: 2, paddingHorizontal: 14, height: 48, gap: 10,
-  },
+  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: 2, paddingHorizontal: 14, height: 48, gap: 10 },
   searchInput: { flex: 1, fontFamily: FONTS.body, fontSize: 14, color: COLORS.text },
-
   chipScroll: { marginTop: 16 },
   chipContainer: { paddingHorizontal: 16, gap: 8 },
-  chip: {
-    paddingHorizontal: 18, paddingVertical: 10,
-    backgroundColor: COLORS.surface, borderRadius: 2,
-  },
+  chip: { paddingHorizontal: 18, paddingVertical: 10, backgroundColor: COLORS.surface, borderRadius: 2 },
   chipActive: { backgroundColor: COLORS.primary },
   chipText: { fontFamily: FONTS.bodyMedium, fontSize: 12, color: COLORS.text, letterSpacing: 1, textTransform: 'uppercase' },
   chipTextActive: { color: COLORS.white },
-
   grid: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 100 },
   gridRow: { justifyContent: 'space-between' },
-
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
   emptyText: { fontFamily: FONTS.body, fontSize: 14, color: COLORS.textMuted, marginTop: 12 },
 });

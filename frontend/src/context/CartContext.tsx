@@ -2,7 +2,8 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type CartItem = {
-  product_id: string;
+  variant_id: string;
+  handle: string;
   name: string;
   price: number;
   image: string;
@@ -12,8 +13,8 @@ export type CartItem = {
 type CartContextType = {
   items: CartItem[];
   addItem: (product: Omit<CartItem, 'quantity'>, quantity?: number) => void;
-  removeItem: (productId: string) => void;
-  updateQuantity: (productId: string, qty: number) => void;
+  removeItem: (variantId: string) => void;
+  updateQuantity: (variantId: string, qty: number) => void;
   clearCart: () => void;
   total: number;
   itemCount: number;
@@ -36,26 +37,26 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const addItem = useCallback((product: Omit<CartItem, 'quantity'>, quantity = 1) => {
     setItems(prev => {
-      const existing = prev.find(i => i.product_id === product.product_id);
+      const existing = prev.find(i => i.variant_id === product.variant_id);
       if (existing) {
         return prev.map(i =>
-          i.product_id === product.product_id ? { ...i, quantity: i.quantity + quantity } : i
+          i.variant_id === product.variant_id ? { ...i, quantity: i.quantity + quantity } : i
         );
       }
       return [...prev, { ...product, quantity }];
     });
   }, []);
 
-  const removeItem = useCallback((productId: string) => {
-    setItems(prev => prev.filter(i => i.product_id !== productId));
+  const removeItem = useCallback((variantId: string) => {
+    setItems(prev => prev.filter(i => i.variant_id !== variantId));
   }, []);
 
-  const updateQuantity = useCallback((productId: string, qty: number) => {
+  const updateQuantity = useCallback((variantId: string, qty: number) => {
     if (qty <= 0) {
-      setItems(prev => prev.filter(i => i.product_id !== productId));
+      setItems(prev => prev.filter(i => i.variant_id !== variantId));
       return;
     }
-    setItems(prev => prev.map(i => i.product_id === productId ? { ...i, quantity: qty } : i));
+    setItems(prev => prev.map(i => i.variant_id === variantId ? { ...i, quantity: qty } : i));
   }, []);
 
   const clearCart = useCallback(() => {
