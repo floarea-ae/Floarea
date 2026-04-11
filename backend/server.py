@@ -360,6 +360,243 @@ async def create_cart(req: CreateCartReq):
     }
 
 
+# ─── Shopify Customer Auth ───
+class ShopifyLoginReq(BaseModel):
+    email: str
+    password: str
+
+class ShopifyRegisterReq(BaseModel):
+    email: str
+    password: str
+    first_name: str
+    last_name: str = ""
+    phone: str = ""
+
+@api_router.post("/shopify-auth/register")
+async def shopify_register(req: ShopifyRegisterReq):
+    mutation = """
+    mutation($input: CustomerCreateInput!) {
+      customerCreate(input: $input) {
+        customer { id firstName lastName email phone }
+        customerUserErrors { code field message }
+      }
+    }
+    """
+    variables = {"input": {
+        "email": req.email, "password": req.password,
+        "firstName": req.first_name, "lastName": req.last_name or req.first_name,
+    }}
+    if req.phone:
+        variables["input"]["phone"] = req.phone
+    data = await shopify_graphql(mutation, variables)
+    result = data.get("customerCreate", {})
+    errors = result.get("customerUserErrors", [])
+    if errors:
+        raise HTTPException(status_code=400, detail=errors[0].get("message", "Registration failed"))
+    # Auto-login after register
+    return await shopify_login(ShopifyLoginReq(email=req.email, password=req.password))
+
+@api_router.post("/shopify-auth/login")
+async def shopify_login(req: ShopifyLoginReq):
+    mutation = """
+    mutation($input: CustomerAccessTokenCreateInput!) {
+      customerAccessTokenCreate(input: $input) {
+        customerAccessToken { accessToken expiresAt }
+        customerUserErrors { code field message }
+      }
+    }
+    """
+    data = await shopify_graphql(mutation, {"input": {"email": req.email, "password": req.password}})
+    result = data.get("customerAccessTokenCreate", {})
+    errors = result.get("customerUserErrors", [])
+    if errors:
+        raise HTTPException(status_code=401, detail=errors[0].get("message", "Invalid credentials"))
+    token_data = result.get("customerAccessToken", {})
+    if not token_data:
+        raise HTTPException(status_code=401, detail="Login failed")
+    customer_token = token_data["accessToken"]
+    # Fetch customer profile
+    profile = await _get_shopify_customer(customer_token)
+    # Also store/update in local DB for push tokens
+    email = req.email.lower().strip()
+    existing = await db.users.find_one({"email": email})
+    if not existing:
+        result_db = await db.users.insert_one({
+            "name": profile.get("firstName", "") + " " + profile.get("lastName", ""),
+            "email": email, "password_hash": hash_password(req.password),
+            "phone": profile.get("phone", ""), "role": "customer",
+            "shopify_customer_id": profile.get("id", ""),
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        local_id = str(result_db.inserted_id)
+    else:
+        local_id = str(existing["_id"])
+        await db.users.update_one({"_id": existing["_id"]}, {"$set": {"shopify_customer_id": profile.get("id", "")}})
+    local_jwt = create_token(local_id, email)
+    return {
+        "token": local_jwt,
+        "shopify_customer_token": customer_token,
+        "user": {
+            "id": local_id, "name": (profile.get("firstName", "") + " " + profile.get("lastName", "")).strip(),
+            "email": email, "phone": profile.get("phone", ""), "role": "customer",
+        }
+    }
+
+async def _get_shopify_customer(customer_token: str) -> dict:
+    query = """
+    query($token: String!) {
+      customer(customerAccessToken: $token) {
+        id firstName lastName email phone
+        defaultAddress { address1 city province country zip }
+      }
+    }
+    """
+    data = await shopify_graphql(query, {"token": customer_token})
+    return data.get("customer", {})
+
+@api_router.get("/shopify-auth/orders")
+async def get_shopify_orders(shopify_token: str = Header(alias="x-shopify-customer-token")):
+    if not shopify_token:
+        raise HTTPException(status_code=401, detail="Shopify customer token required")
+    query = """
+    query($token: String!) {
+      customer(customerAccessToken: $token) {
+        orders(first: 20, sortKey: PROCESSED_AT, reverse: true) {
+          edges {
+            node {
+              id name orderNumber processedAt
+              financialStatus fulfillmentStatus
+              totalPrice { amount currencyCode }
+              lineItems(first: 10) {
+                edges {
+                  node {
+                    title quantity
+                    variant { image { url } price { amount currencyCode } }
+                  }
+                }
+              }
+              shippingAddress { address1 city province country }
+            }
+          }
+        }
+      }
+    }
+    """
+    data = await shopify_graphql(query, {"token": shopify_token})
+    customer = data.get("customer")
+    if not customer:
+        raise HTTPException(status_code=401, detail="Invalid or expired customer token")
+    orders = []
+    for edge in customer.get("orders", {}).get("edges", []):
+        node = edge["node"]
+        items = []
+        for li_edge in node.get("lineItems", {}).get("edges", []):
+            li = li_edge["node"]
+            variant = li.get("variant") or {}
+            items.append({
+                "title": li["title"], "quantity": li["quantity"],
+                "price": float(variant.get("price", {}).get("amount", 0)),
+                "image": (variant.get("image") or {}).get("url", ""),
+            })
+        orders.append({
+            "id": node["id"], "name": node["name"], "order_number": node.get("orderNumber"),
+            "processed_at": node.get("processedAt", ""),
+            "financial_status": node.get("financialStatus", ""),
+            "fulfillment_status": node.get("fulfillmentStatus", ""),
+            "total": float(node.get("totalPrice", {}).get("amount", 0)),
+            "currency": node.get("totalPrice", {}).get("currencyCode", "AED"),
+            "items": items,
+            "shipping_address": node.get("shippingAddress"),
+        })
+    return {"orders": orders}
+
+
+# ─── Push Notifications ───
+EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+
+class PushTokenReq(BaseModel):
+    push_token: str
+
+@api_router.post("/push/register")
+async def register_push_token(req: PushTokenReq, authorization: Optional[str] = Header(None)):
+    user = await get_current_user(authorization)
+    await db.push_tokens.update_one(
+        {"user_id": user["id"]},
+        {"$set": {"user_id": user["id"], "token": req.push_token, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    return {"status": "registered"}
+
+@api_router.delete("/push/unregister")
+async def unregister_push_token(authorization: Optional[str] = Header(None)):
+    user = await get_current_user(authorization)
+    await db.push_tokens.delete_many({"user_id": user["id"]})
+    return {"status": "unregistered"}
+
+@api_router.post("/push/send")
+async def send_push_notification(
+    title: str = Body(...), body: str = Body(...),
+    data: dict = Body(default={}),
+    user_id: Optional[str] = Body(default=None),
+    authorization: Optional[str] = Header(None)
+):
+    """Send push notification. Admin only or to self."""
+    sender = await get_current_user(authorization)
+    if user_id and sender["role"] != "admin" and sender["id"] != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    query_filter = {"user_id": user_id} if user_id else {}
+    tokens = await db.push_tokens.find(query_filter).to_list(1000)
+    if not tokens:
+        return {"sent": 0}
+    messages = [
+        {"to": t["token"], "title": title, "body": body, "data": data, "sound": "default"}
+        for t in tokens if t.get("token", "").startswith("ExponentPushToken")
+    ]
+    if messages:
+        async with httpx.AsyncClient(timeout=10) as http:
+            await http.post(EXPO_PUSH_URL, json=messages, headers={"Content-Type": "application/json"})
+    return {"sent": len(messages)}
+
+# ─── Shopify Cart with Customer ───
+@api_router.post("/cart/create-with-customer")
+async def create_cart_with_customer(
+    req: CreateCartReq,
+    shopify_token: Optional[str] = Header(default=None, alias="x-shopify-customer-token"),
+):
+    lines = [{"merchandiseId": line.variantId, "quantity": line.quantity} for line in req.lines]
+    if shopify_token:
+        mutation = """
+        mutation($lines: [CartLineInput!]!, $token: String!) {
+          cartCreate(input: { lines: $lines, buyerIdentity: { customerAccessToken: $token } }) {
+            cart { id checkoutUrl cost { totalAmount { amount currencyCode } } }
+            userErrors { field message }
+          }
+        }
+        """
+        data = await shopify_graphql(mutation, {"lines": lines, "token": shopify_token})
+    else:
+        mutation = """
+        mutation($lines: [CartLineInput!]!) {
+          cartCreate(input: { lines: $lines }) {
+            cart { id checkoutUrl cost { totalAmount { amount currencyCode } } }
+            userErrors { field message }
+          }
+        }
+        """
+        data = await shopify_graphql(mutation, {"lines": lines})
+    cart_data = data.get("cartCreate", {})
+    errors = cart_data.get("userErrors", [])
+    if errors:
+        raise HTTPException(status_code=400, detail=errors[0].get("message", "Cart creation failed"))
+    cart = cart_data.get("cart", {})
+    return {
+        "cart_id": cart.get("id", ""),
+        "checkout_url": cart.get("checkoutUrl", ""),
+        "total": float(cart.get("cost", {}).get("totalAmount", {}).get("amount", 0)),
+        "currency": cart.get("cost", {}).get("totalAmount", {}).get("currencyCode", "AED"),
+    }
+
+
 # ─── Health ───
 @api_router.get("/health")
 async def health():
@@ -371,10 +608,9 @@ app.include_router(api_router)
 # ─── Startup ───
 @app.on_event("startup")
 async def startup():
-    # Create indexes
     await db.users.create_index("email", unique=True)
+    await db.push_tokens.create_index("user_id", unique=True)
 
-    # Admin user
     admin_email = os.environ.get('ADMIN_EMAIL', 'admin@floarea.ae')
     admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
     if not await db.users.find_one({"email": admin_email}):
@@ -386,11 +622,9 @@ async def startup():
         })
         logger.info("Seeded admin user")
 
-    # Write test credentials
     os.makedirs("/app/memory", exist_ok=True)
     with open("/app/memory/test_credentials.md", "w") as f:
-        f.write(f"# Test Credentials\n\n## Admin\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n\n## Auth Endpoints\n- POST /api/auth/register\n- POST /api/auth/login\n- GET /api/auth/me\n\n## Shopify Endpoints\n- GET /api/collections\n- GET /api/collections/{{handle}}\n- GET /api/products\n- GET /api/products/{{handle}}\n- POST /api/cart/create\n- GET /api/health\n")
-
+        f.write(f"# Test Credentials\n\n## Admin\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n\n## Shopify Customer Auth\n- POST /api/shopify-auth/register\n- POST /api/shopify-auth/login\n- GET /api/shopify-auth/orders (header: x-shopify-customer-token)\n\n## Push Notifications\n- POST /api/push/register\n- POST /api/push/send\n- DELETE /api/push/unregister\n")
     logger.info(f"Startup complete. Shopify store: {SHOPIFY_STORE}")
 
 

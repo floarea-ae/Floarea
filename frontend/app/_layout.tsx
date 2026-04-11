@@ -4,11 +4,27 @@ import { StatusBar } from 'expo-status-bar';
 import { useFonts, CormorantGaramond_300Light, CormorantGaramond_400Regular, CormorantGaramond_600SemiBold } from '@expo-google-fonts/cormorant-garamond';
 import { Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold } from '@expo-google-fonts/outfit';
 import * as SplashScreen from 'expo-splash-screen';
-import { AuthProvider } from '../src/context/AuthContext';
+import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { CartProvider } from '../src/context/CartContext';
 import { WishlistProvider } from '../src/context/WishlistContext';
+import { registerForPushNotifications, registerTokenWithBackend, useNotificationListeners } from '../src/notifications';
 
 SplashScreen.preventAutoHideAsync();
+
+function PushNotificationHandler() {
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      registerForPushNotifications().then(token => {
+        if (token) registerTokenWithBackend(token);
+      });
+    }
+  }, [user]);
+
+  useNotificationListeners();
+  return null;
+}
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -21,9 +37,7 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    if (fontsLoaded) {
-      SplashScreen.hideAsync();
-    }
+    if (fontsLoaded) SplashScreen.hideAsync();
   }, [fontsLoaded]);
 
   if (!fontsLoaded) return null;
@@ -32,6 +46,7 @@ export default function RootLayout() {
     <AuthProvider>
       <CartProvider>
         <WishlistProvider>
+          <PushNotificationHandler />
           <StatusBar style="dark" />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />

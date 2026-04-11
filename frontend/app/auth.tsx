@@ -21,6 +21,7 @@ export default function AuthScreen() {
     setError('');
     if (!email || !password) { setError('Please fill in all required fields'); return; }
     if (!isLogin && !name) { setError('Please enter your name'); return; }
+    if (password.length < 5) { setError('Password must be at least 5 characters'); return; }
     setLoading(true);
     try {
       if (isLogin) {
@@ -46,7 +47,7 @@ export default function AuthScreen() {
 
           <Text style={styles.brand}>FLOAREA</Text>
           <Text style={styles.title}>{isLogin ? 'Welcome Back' : 'Create Account'}</Text>
-          <Text style={styles.subtitle}>{isLogin ? 'Sign in to track orders' : 'Join Floarea for exclusive offers'}</Text>
+          <Text style={styles.subtitle}>{isLogin ? 'Sign in with your Floarea account' : 'Create your Floarea account'}</Text>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
