@@ -13,18 +13,21 @@ export default function HomeScreen() {
   const router = useRouter();
   const [collections, setCollections] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [heroBanner, setHeroBanner] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
     try {
-      const [colData, prodData] = await Promise.all([
+      const [colData, prodData, heroData] = await Promise.all([
         api.get('/collections?featured_only=true'),
         api.get('/products?first=8'),
+        api.get('/hero-banner'),
       ]);
       setCollections(colData.collections || []);
       setProducts(prodData.products || []);
+      setHeroBanner(heroData);
     } catch (e) {
       console.error('Load error:', e);
     } finally {
@@ -40,7 +43,11 @@ export default function HomeScreen() {
     );
   }
 
-  const heroImage = products[0]?.image || 'https://static.prod-images.emergentagent.com/jobs/a06552a2-c265-40ba-8f47-09377686258f/images/7a38dfc4f58944083838abb9587b764e9809560d2e9979a74da00d8440727956.png';
+  const heroImage = heroBanner?.image || products[0]?.image || '';
+  const heroOverline = heroBanner?.subtitle || 'INSPIRED BY NATURE';
+  const heroTitle = heroBanner?.description || 'Luxury Blooms,\nDelivered\nWith Love';
+  const heroCtaText = heroBanner?.cta_text || 'SHOP NOW';
+  const heroCtaUrl = heroBanner?.cta_url || '/shop';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -57,13 +64,13 @@ export default function HomeScreen() {
         </View>
 
         {/* Hero Banner */}
-        <TouchableOpacity testID="hero-banner" style={styles.heroBanner} onPress={() => router.push('/shop')} activeOpacity={0.9}>
+        <TouchableOpacity testID="hero-banner" style={styles.heroBanner} onPress={() => router.push(heroCtaUrl as any)} activeOpacity={0.9}>
           <Image source={{ uri: heroImage }} style={styles.heroImage} contentFit="cover" />
           <View style={styles.heroOverlay}>
-            <Text style={styles.heroOverline}>INSPIRED BY NATURE</Text>
-            <Text style={styles.heroTitle}>Luxury Blooms,{'\n'}Delivered{'\n'}With Love</Text>
+            <Text style={styles.heroOverline}>{heroOverline}</Text>
+            <Text style={styles.heroTitle}>{heroTitle}</Text>
             <View style={styles.heroBtn}>
-              <Text style={styles.heroBtnText}>SHOP NOW</Text>
+              <Text style={styles.heroBtnText}>{heroCtaText}</Text>
             </View>
           </View>
         </TouchableOpacity>
@@ -130,7 +137,7 @@ export default function HomeScreen() {
         {/* Promo Banner */}
         <TouchableOpacity style={styles.promoBanner} onPress={() => router.push({ pathname: '/shop', params: { collection: 'forever-special-occasion-roses' } })} activeOpacity={0.9}>
           <Image
-            source={{ uri: products[2]?.image || 'https://static.prod-images.emergentagent.com/jobs/a06552a2-c265-40ba-8f47-09377686258f/images/bb43e32f1de35ccdae4ff274e261cafb9eec619a1fdfd82effeb85a816e39db2.png' }}
+            source={{ uri: products[2]?.image || '' }}
             style={styles.promoImage}
             contentFit="cover"
           />

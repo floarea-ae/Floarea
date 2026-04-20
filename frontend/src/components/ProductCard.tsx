@@ -35,7 +35,7 @@ export default function ProductCard({ product }: ProductCardProps) {
       activeOpacity={0.8}
     >
       <View style={styles.imageWrapper}>
-        <Image source={{ uri: product.image }} style={styles.image} contentFit="cover" />
+        <Image source={{ uri: product.image }} style={styles.image} contentFit="contain" />
         <TouchableOpacity
           testID={`wishlist-toggle-${product.handle}`}
           style={styles.heartBtn}

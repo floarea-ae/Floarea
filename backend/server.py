@@ -597,6 +597,42 @@ async def create_cart_with_customer(
     }
 
 
+# ─── Hero Banner ───
+@api_router.get("/hero-banner")
+async def get_hero_banner():
+    """
+    Returns hero banner data from the Shopify 'frontpage' collection.
+    Update the frontpage collection image/description in Shopify admin to change the banner.
+    Falls back to shop metafields if the collection has no image.
+    """
+    query = """
+    {
+      collection(handle: "frontpage") {
+        title
+        description
+        image { url altText }
+        metafield(namespace: "hero", key: "subtitle") { value }
+        metafield2: metafield(namespace: "hero", key: "cta_text") { value }
+        metafield3: metafield(namespace: "hero", key: "cta_url") { value }
+      }
+    }
+    """
+    data = await shopify_graphql(query)
+    collection = data.get("collection") or {}
+    image_url = (collection.get("image") or {}).get("url", "")
+    image_alt = (collection.get("image") or {}).get("altText", "")
+
+    return {
+        "image": image_url,
+        "image_alt": image_alt,
+        "title": collection.get("title", ""),
+        "description": collection.get("description", ""),
+        "subtitle": (collection.get("metafield") or {}).get("value", ""),
+        "cta_text": (collection.get("metafield2") or {}).get("value", ""),
+        "cta_url": (collection.get("metafield3") or {}).get("value", ""),
+    }
+
+
 # ─── Health ───
 @api_router.get("/health")
 async def health():

@@ -88,3 +88,16 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# Metro cache
+frontend/.metro-cache/
+
+# Emergent/dev artifacts
+.emergent/
+memory/
+test_reports/
+tests/
+test_result.md
+design_guidelines.json
+.gitconfig
+backend/tests/
