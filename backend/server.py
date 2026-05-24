@@ -4,27 +4,14 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, HTTPException, Header, Body
+from fastapi import FastAPI, APIRouter, HTTPException, Header
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
-import uuid
-import bcrypt
-import jwt
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime, timezone, timedelta
-from bson import ObjectId
-
-# Database (for auth only)
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ.get('DB_NAME', 'floarea_db')]
-
-JWT_SECRET = os.environ.get('JWT_SECRET')
-JWT_ALGORITHM = "HS256"
+from datetime import datetime, timezone
 
 # Shopify config
 SHOPIFY_STORE = os.environ.get('SHOPIFY_STORE_DOMAIN')
@@ -159,45 +146,8 @@ def transform_collection(node: dict) -> dict:
 
 
 # ─── Auth Helpers ───
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
-
-def create_token(user_id: str, email: str) -> str:
-    return jwt.encode(
-        {"sub": user_id, "email": email, "exp": datetime.now(timezone.utc) + timedelta(days=30), "type": "access"},
-        JWT_SECRET, algorithm=JWT_ALGORITHM
-    )
-
-async def get_current_user(authorization: Optional[str] = Header(None)):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    try:
-        payload = jwt.decode(authorization[7:], JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        return {
-            "id": str(user["_id"]), "name": user["name"], "email": user["email"],
-            "phone": user.get("phone", ""), "role": user.get("role", "customer")
-        }
-    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError) as e:
-        raise HTTPException(status_code=401, detail=str(e))
-
 
 # ─── Auth Models ───
-class RegisterReq(BaseModel):
-    name: str
-    email: str
-    password: str
-    phone: str = ""
-
-class LoginReq(BaseModel):
-    email: str
-    password: str
-
 class CartLineInput(BaseModel):
     variantId: str
     quantity: int = 1
@@ -207,40 +157,6 @@ class CreateCartReq(BaseModel):
 
 
 # ─── Auth Routes ───
-@api_router.post("/auth/register")
-async def register(req: RegisterReq):
-    email = req.email.lower().strip()
-    if await db.users.find_one({"email": email}):
-        raise HTTPException(status_code=400, detail="Email already registered")
-    result = await db.users.insert_one({
-        "name": req.name, "email": email,
-        "password_hash": hash_password(req.password),
-        "phone": req.phone, "role": "customer",
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
-    uid = str(result.inserted_id)
-    return {
-        "token": create_token(uid, email),
-        "user": {"id": uid, "name": req.name, "email": email, "phone": req.phone, "role": "customer"}
-    }
-
-@api_router.post("/auth/login")
-async def login(req: LoginReq):
-    email = req.email.lower().strip()
-    user = await db.users.find_one({"email": email})
-    if not user or not verify_password(req.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    uid = str(user["_id"])
-    return {
-        "token": create_token(uid, email),
-        "user": {"id": uid, "name": user["name"], "email": email, "phone": user.get("phone", ""), "role": user.get("role", "customer")}
-    }
-
-@api_router.get("/auth/me")
-async def get_me(authorization: Optional[str] = Header(None)):
-    return {"user": await get_current_user(authorization)}
-
-
 # ─── Shopify Collections ───
 @api_router.get("/collections")
 async def get_collections(featured_only: bool = False):
@@ -454,29 +370,12 @@ async def shopify_login(req: ShopifyLoginReq):
     if not token_data:
         raise HTTPException(status_code=401, detail="Login failed")
     customer_token = token_data["accessToken"]
-    # Fetch customer profile
     profile = await _get_shopify_customer(customer_token)
-    # Also store/update in local DB for push tokens
     email = req.email.lower().strip()
-    existing = await db.users.find_one({"email": email})
-    if not existing:
-        result_db = await db.users.insert_one({
-            "name": profile.get("firstName", "") + " " + profile.get("lastName", ""),
-            "email": email, "password_hash": hash_password(req.password),
-            "phone": profile.get("phone", ""), "role": "customer",
-            "shopify_customer_id": profile.get("id", ""),
-            "created_at": datetime.now(timezone.utc).isoformat()
-        })
-        local_id = str(result_db.inserted_id)
-    else:
-        local_id = str(existing["_id"])
-        await db.users.update_one({"_id": existing["_id"]}, {"$set": {"shopify_customer_id": profile.get("id", "")}})
-    local_jwt = create_token(local_id, email)
     return {
-        "token": local_jwt,
         "shopify_customer_token": customer_token,
         "user": {
-            "id": local_id, "name": (profile.get("firstName", "") + " " + profile.get("lastName", "")).strip(),
+            "id": profile.get("id", ""), "name": (profile.get("firstName", "") + " " + profile.get("lastName", "")).strip(),
             "email": email, "phone": profile.get("phone", ""), "role": "customer",
         }
     }
@@ -562,7 +461,7 @@ async def get_shopify_orders(shopify_token: str = Header(alias="x-shopify-custom
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
 class PushTokenReq(BaseModel):
-    push_token: str
+    expo_token: str
     platform: Optional[str] = None
 
 class PushSendReq(BaseModel):
@@ -589,7 +488,7 @@ async def register_push_token(
     }
     payload = {
         "customer_id": customer_id,
-        "expo_token": req.push_token,
+        "expo_token": req.expo_token,
         "platform": req.platform or "unknown",
         "customer_email": customer_email,
         "updated_at": datetime.now(timezone.utc).isoformat()
@@ -741,33 +640,8 @@ app.include_router(api_router)
 # ─── Startup ───
 @app.on_event("startup")
 async def startup():
-    admin_email = os.environ.get('ADMIN_EMAIL', 'admin@floarea.ae')
-    admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
-
     env = os.environ.get('ENV', 'development').lower()
     is_production = env == 'production' or os.environ.get('PRODUCTION', 'false').lower() == 'true'
-
-    try:
-        # DB operations
-        await db.users.create_index("email", unique=True)
-
-        is_default_admin = (admin_email == 'admin@floarea.ae' and admin_password == 'admin123')
-        if is_production and is_default_admin:
-            logger.warning("Skipping default admin user seed in production for security.")
-        else:
-            if not await db.users.find_one({"email": admin_email}):
-                await db.users.insert_one({
-                    "name": "Admin",
-                    "email": admin_email,
-                    "password_hash": hash_password(admin_password),
-                    "phone": "+971501311930",
-                    "role": "admin",
-                    "created_at": datetime.now(timezone.utc).isoformat()
-                })
-                logger.info("Seeded admin user")
-
-    except Exception as e:
-        print("DB not available, skipping ALL DB operations")
 
     if not is_production:
         try:
@@ -777,7 +651,6 @@ async def startup():
             with open("/app/memory/test_credentials.md", "w") as f:
                 f.write(
                     f"# Test Credentials\n\n"
-                    f"## Admin\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n\n"
                     f"## Shopify Customer Auth\n"
                     f"- POST /api/shopify-auth/register\n"
                     f"- POST /api/shopify-auth/login\n"
@@ -793,8 +666,3 @@ async def startup():
         logger.info("Skipping test credentials file write in production.")
 
     logger.info(f"Startup complete. Shopify store: {SHOPIFY_STORE}")
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    client.close()

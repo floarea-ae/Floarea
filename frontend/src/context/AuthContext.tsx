@@ -30,7 +30,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function checkAuth() {
     try {
-      const legacyToken = await Storage.getSecureItem('auth_token');
       const sToken = await Storage.getSecureItem('shopify_customer_token');
       const authUserStr = await Storage.getSecureItem('auth_user');
       
@@ -38,7 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(JSON.parse(authUserStr));
       }
       if (sToken) setShopifyToken(sToken);
-      api.setAuth({ legacyAuthToken: legacyToken, shopifyToken: sToken });
+      api.setAuth({ shopifyToken: sToken });
     } catch (e) {
       console.error('Auth storage boot error:', e);
     } finally {
@@ -67,15 +66,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!data.shopify_customer_token) {
       throw new Error('Shopify customer token missing from login response');
     }
-    if (data.token) {
-      await Storage.setSecureItem('auth_token', data.token);
-    }
     await Storage.setSecureItem('auth_user', JSON.stringify(data.user));
     if (data.shopify_customer_token) {
       await Storage.setSecureItem('shopify_customer_token', data.shopify_customer_token);
       setShopifyToken(data.shopify_customer_token);
     }
-    api.setAuth({ legacyAuthToken: data.token || null, shopifyToken: data.shopify_customer_token || null });
+    api.setAuth({ shopifyToken: data.shopify_customer_token || null });
     setUser(data.user);
   }, []);
 
@@ -86,15 +82,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!data.shopify_customer_token) {
       throw new Error('Shopify customer token missing from registration response');
     }
-    if (data.token) {
-      await Storage.setSecureItem('auth_token', data.token);
-    }
     await Storage.setSecureItem('auth_user', JSON.stringify(data.user));
     if (data.shopify_customer_token) {
       await Storage.setSecureItem('shopify_customer_token', data.shopify_customer_token);
       setShopifyToken(data.shopify_customer_token);
     }
-    api.setAuth({ legacyAuthToken: data.token || null, shopifyToken: data.shopify_customer_token || null });
+    api.setAuth({ shopifyToken: data.shopify_customer_token || null });
     setUser(data.user);
   }, []);
 
@@ -106,7 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logoutPromiseRef.current = (async () => {
       await unregisterTokenWithBackend();
       await Storage.multiRemoveSecure(['auth_token', 'shopify_customer_token', 'push_token', 'auth_user']);
-      api.setAuth({ legacyAuthToken: null, shopifyToken: null });
+      api.setAuth({ shopifyToken: null });
       setUser(null);
       setShopifyToken(null);
     })().finally(() => {

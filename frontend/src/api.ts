@@ -5,7 +5,6 @@ const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 interface CustomRequestInit extends RequestInit {
   requireAuth?: boolean;
   useShopifyToken?: boolean;
-  useLegacyAuthToken?: boolean;
   suppressUnauthorizedHandler?: boolean;
 }
 
@@ -19,13 +18,11 @@ export class ApiError extends Error {
 }
 
 class ApiClient {
-  private legacyAuthToken: string | null = null;
   private shopifyToken: string | null = null;
   private unauthorizedHandler: (() => Promise<void> | void) | null = null;
   private unauthorizedPromise: Promise<void> | null = null;
 
-  setAuth({ legacyAuthToken, shopifyToken }: { legacyAuthToken?: string | null; shopifyToken: string | null }) {
-    this.legacyAuthToken = legacyAuthToken ?? null;
+  setAuth({ shopifyToken }: { shopifyToken: string | null }) {
     this.shopifyToken = shopifyToken;
   }
 
@@ -57,10 +54,6 @@ class ApiClient {
 
     if ((options.requireAuth || options.useShopifyToken) && this.shopifyToken) {
       headers['x-shopify-customer-token'] = this.shopifyToken;
-    }
-
-    if (options.useLegacyAuthToken && this.legacyAuthToken) {
-      headers['Authorization'] = `Bearer ${this.legacyAuthToken}`;
     }
 
     try {
