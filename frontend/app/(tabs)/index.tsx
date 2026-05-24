@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -8,26 +8,24 @@ import { api } from '../../src/api';
 import { COLORS, FONTS } from '../../src/constants';
 import ProductCard from '../../src/components/ProductCard';
 import WhatsAppButton from '../../src/components/WhatsAppButton';
+import HeroSlider from '../../src/components/HeroSlider';
 
 export default function HomeScreen() {
   const router = useRouter();
   const [collections, setCollections] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
-  const [heroBanner, setHeroBanner] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
     try {
-      const [colData, prodData, heroData] = await Promise.all([
+      const [colData, prodData] = await Promise.all([
         api.get('/collections?featured_only=true'),
         api.get('/products?first=8'),
-        api.get('/hero-banner'),
       ]);
       setCollections(colData.collections || []);
       setProducts(prodData.products || []);
-      setHeroBanner(heroData);
     } catch (e) {
       console.error('Load error:', e);
     } finally {
@@ -43,37 +41,23 @@ export default function HomeScreen() {
     );
   }
 
-  const heroImage = heroBanner?.image || products[0]?.image || '';
-  const heroOverline = heroBanner?.subtitle || 'INSPIRED BY NATURE';
-  const heroTitle = heroBanner?.description || 'Luxury Blooms,\nDelivered\nWith Love';
-  const heroCtaText = heroBanner?.cta_text || 'SHOP NOW';
-  const heroCtaUrl = heroBanner?.cta_url || '/shop';
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.logoText}>FLOAREA</Text>
-            <Text style={styles.logoSubText}>Luxury Blooms</Text>
-          </View>
+          <Image 
+            source={{ uri: 'https://floarea.ae/cdn/shop/files/Floarea-logo-upd.png' }} 
+            style={styles.logoImage} 
+            contentFit="contain" 
+          />
           <TouchableOpacity testID="search-btn" onPress={() => router.push('/shop')}>
             <Ionicons name="search-outline" size={24} color={COLORS.text} />
           </TouchableOpacity>
         </View>
 
-        {/* Hero Banner */}
-        <TouchableOpacity testID="hero-banner" style={styles.heroBanner} onPress={() => router.push(heroCtaUrl as any)} activeOpacity={0.9}>
-          <Image source={{ uri: heroImage }} style={styles.heroImage} contentFit="cover" />
-          <View style={styles.heroOverlay}>
-            <Text style={styles.heroOverline}>{heroOverline}</Text>
-            <Text style={styles.heroTitle}>{heroTitle}</Text>
-            <View style={styles.heroBtn}>
-              <Text style={styles.heroBtnText}>{heroCtaText}</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
+        {/* Hero Slider */}
+        <HeroSlider />
 
         {/* Categories */}
         {collections.length > 0 && (
@@ -153,7 +137,7 @@ export default function HomeScreen() {
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerBrand}>FLOAREA</Text>
-          <Text style={styles.footerTagline}>Floral Art for Life's{'\n'}Most Beautiful Moments</Text>
+          <Text style={styles.footerTagline}>Floral Art for Life&apos;s{'\n'}Most Beautiful Moments</Text>
           <Text style={styles.footerInfo}>Five Palm Hotel | Five Luxe JBR Hotel</Text>
           <Text style={styles.footerInfo}>Dubai, UAE | +971 50 131 1930</Text>
         </View>
@@ -167,15 +151,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16 },
-  logoText: { fontFamily: FONTS.headingSemiBold, fontSize: 24, color: COLORS.primary, letterSpacing: 4 },
-  logoSubText: { fontFamily: FONTS.body, fontSize: 11, color: COLORS.textMuted, letterSpacing: 2, marginTop: 2 },
-  heroBanner: { height: 420, marginHorizontal: 16, borderRadius: 4, overflow: 'hidden' },
-  heroImage: { width: '100%', height: '100%' },
-  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end', padding: 24 },
-  heroOverline: { fontFamily: FONTS.bodySemiBold, fontSize: 11, color: 'rgba(255,255,255,0.8)', letterSpacing: 3 },
-  heroTitle: { fontFamily: FONTS.headingLight, fontSize: 36, color: COLORS.white, marginTop: 8, lineHeight: 42 },
-  heroBtn: { backgroundColor: COLORS.white, paddingHorizontal: 24, paddingVertical: 14, alignSelf: 'flex-start', marginTop: 20 },
-  heroBtnText: { fontFamily: FONTS.bodySemiBold, fontSize: 12, color: COLORS.primary, letterSpacing: 3 },
+  logoImage: { width: 160, height: 40 },
   section: { paddingHorizontal: 16, marginTop: 36 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   sectionTitle: { fontFamily: FONTS.headingLight, fontSize: 28, color: COLORS.text },

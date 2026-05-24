@@ -1,26 +1,18 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { useCart } from '../../src/context/CartContext';
-import { useWishlist } from '../../src/context/WishlistContext';
+
 import { COLORS, FONTS, WHATSAPP_URL } from '../../src/constants';
 import * as Linking from 'expo-linking';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, loading, logout } = useAuth();
+  const { user, logout } = useAuth();
   const { clearCart } = useCart();
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <ActivityIndicator size="large" color={COLORS.primary} style={{ flex: 1 }} />
-      </SafeAreaView>
-    );
-  }
 
   if (!user) {
     return (

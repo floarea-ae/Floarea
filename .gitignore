@@ -101,3 +101,16 @@ test_result.md
 design_guidelines.json
 .gitconfig
 backend/tests/
+
+# Local mockups and assets
+frontend/floarea_home.html
+
+
+# Expo local cache
+frontend/.expo/
+
+# Mobile native folders
+frontend/android/
+frontend/ios/
+
+expo-env.d.ts

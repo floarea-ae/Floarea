@@ -12,15 +12,15 @@ import { registerForPushNotifications, registerTokenWithBackend, useNotification
 SplashScreen.preventAutoHideAsync();
 
 function PushNotificationHandler() {
-  const { user } = useAuth();
+  const { shopifyToken } = useAuth();
 
   useEffect(() => {
-    if (user) {
+    if (shopifyToken) {
       registerForPushNotifications().then(token => {
         if (token) registerTokenWithBackend(token);
       });
     }
-  }, [user]);
+  }, [shopifyToken]);
 
   useNotificationListeners();
   return null;

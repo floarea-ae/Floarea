@@ -20,9 +20,7 @@ export default function ShopScreen() {
     api.get('/collections').then(d => setCollections(d.collections || [])).catch(console.error);
   }, []);
 
-  useEffect(() => { loadProducts(); }, [selectedCollection]);
-
-  async function loadProducts() {
+  const loadProducts = useCallback(async () => {
     setLoading(true);
     try {
       let path = '/products?first=30';
@@ -31,9 +29,11 @@ export default function ShopScreen() {
       const data = await api.get(path);
       setProducts(data.products || []);
     } catch (e) { console.error(e); } finally { setLoading(false); }
-  }
+  }, [selectedCollection, search]);
 
-  const handleSearch = useCallback(() => { loadProducts(); }, [search, selectedCollection]);
+  useEffect(() => { loadProducts(); }, [loadProducts]);
+
+  const handleSearch = useCallback(() => { loadProducts(); }, [loadProducts]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>

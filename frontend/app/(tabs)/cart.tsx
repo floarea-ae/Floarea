@@ -4,13 +4,15 @@ import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../../src/context/AuthContext';
 import { useCart } from '../../src/context/CartContext';
 import { api } from '../../src/api';
 import { COLORS, FONTS } from '../../src/constants';
 
 export default function CartScreen() {
   const router = useRouter();
-  const { items, updateQuantity, removeItem, total, itemCount, clearCart } = useCart();
+  const { shopifyToken } = useAuth();
+  const { items, updateQuantity, removeItem, total, itemCount } = useCart();
   const [checkingOut, setCheckingOut] = useState(false);
   const deliveryFee = total >= 500 ? 0 : 35;
   const grandTotal = total + deliveryFee;
@@ -23,7 +25,9 @@ export default function CartScreen() {
         variantId: item.variant_id,
         quantity: item.quantity,
       }));
-      const data = await api.post('/cart/create', { lines });
+      const endpoint = shopifyToken ? '/cart/create-with-customer' : '/cart/create';
+      const options = shopifyToken ? { useShopifyToken: true } : undefined;
+      const data = await api.post(endpoint, { lines }, options);
       if (data.checkout_url) {
         router.push({ pathname: '/checkout', params: { url: data.checkout_url } });
       }

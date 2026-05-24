@@ -1,51 +1,51 @@
 {
-      "expo": {
-              "name": "Floarea",
-              "slug": "floarea",
-              "owner": "amerkhan",
-              "version": "1.0.0",
-              "orientation": "portrait",
-              "icon": "./assets/images/icon.png",
-              "scheme": "floarea",
-              "userInterfaceStyle": "automatic",
-              "newArchEnabled": true,
-              "ios": {
-                        "supportsTablet": true,
-                        "bundleIdentifier": "ae.floarea.app"
-              },
-              "android": {
-                        "adaptiveIcon": {
-                                    "foregroundImage": "./assets/images/adaptive-icon.png",
-                                    "backgroundColor": "#000"
-                        },
-                        "edgeToEdgeEnabled": true,
-                        "package": "ae.floarea.app"
-              },
-              "web": {
-                        "bundler": "metro",
-                        "output": "static",
-                        "favicon": "./assets/images/favicon.png"
-              },
-              "plugins": [
-                        "expo-router",
-                        [
-                                    "expo-splash-screen",
-                                    {
-                                                  "image": "./assets/images/splash-icon.png",
-                                                  "imageWidth": 200,
-                                                  "resizeMode": "contain",
-                                                  "backgroundColor": "#000"
-                                    }
-                        ],
-                        "expo-font"
-              ],
-              "experiments": {
-                        "typedRoutes": true
-              },
-              "extra": {
-                        "eas": {
-                                    "projectId": "28948659-96fd-43ae-b321-23580c08c07a"
-                        }
-              }
-      }
+  "expo": {
+    "name": "Floarea",
+    "slug": "floarea",
+    "owner": "btwyaseen",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "floarea",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ae.floarea.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#fff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "ae.floarea.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-image.png",
+          "backgroundColor": "#fff"
+        }
+      ],
+      "expo-font",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "899bafec-1834-4e27-8d20-cc830ae5b1e5"
+      },
+      "router": {}
+    }
+  }
 }

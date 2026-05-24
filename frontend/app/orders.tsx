@@ -1,40 +1,31 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../src/context/AuthContext';
+import { api } from '../src/api';
 import { COLORS, FONTS } from '../src/constants';
-
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 export default function OrdersScreen() {
   const router = useRouter();
-  const { user, shopifyToken } = useAuth();
+  const { shopifyToken } = useAuth();
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => { if (shopifyToken) loadOrders(); else setLoading(false); }, [shopifyToken]);
-
-  async function loadOrders() {
+  const loadOrders = useCallback(async () => {
     try {
-      const authToken = await AsyncStorage.getItem('auth_token');
-      const res = await fetch(`${API_URL}/api/shopify-auth/orders`, {
-        headers: {
-          'x-shopify-customer-token': shopifyToken || '',
-          'Authorization': `Bearer ${authToken}`,
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setOrders(data.orders || []);
-      }
-    } catch (e) { console.error('Orders error:', e); }
+      const data = await api.get('/shopify-auth/orders', { requireAuth: true });
+      setOrders(data.orders || []);
+    } catch (e: any) { 
+      console.error('Orders load failed:', e.message); 
+    }
     finally { setLoading(false); setRefreshing(false); }
-  }
+  }, []);
+
+  useEffect(() => { if (shopifyToken) loadOrders(); else setLoading(false); }, [shopifyToken, loadOrders]);
 
   function formatDate(dateStr: string) {
     if (!dateStr) return '';
@@ -50,7 +41,7 @@ export default function OrdersScreen() {
     return COLORS.textMuted;
   }
 
-  if (!user || !shopifyToken) {
+  if (!shopifyToken) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
