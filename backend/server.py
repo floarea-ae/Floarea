@@ -550,7 +550,15 @@ async def send_push_notification(req: PushSendReq):
     ]
     if messages:
         async with httpx.AsyncClient(timeout=10) as http:
-            await http.post(EXPO_PUSH_URL, json=messages, headers={"Content-Type": "application/json"})
+            expo_response = await http.post(
+            EXPO_PUSH_URL,
+            json=messages,
+            headers={"Content-Type": "application/json"}
+        )
+
+    logger.info(f"Expo Push Status: {expo_response.status_code}")
+    logger.info(f"Expo Push Response: {expo_response.text}")
+
     return {"sent": len(messages)}
 
 # ─── Shopify Cart with Customer ───
