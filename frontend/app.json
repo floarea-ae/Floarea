@@ -19,7 +19,8 @@
         "backgroundColor": "#fff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "ae.floarea.app"
+      "package": "ae.floarea.app",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",

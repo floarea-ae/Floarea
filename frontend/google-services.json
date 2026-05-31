@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "582017097433",
+    "project_id": "floarea-e8c01",
+    "storage_bucket": "floarea-e8c01.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:582017097433:android:b7bdb723f9e6dc342628c8",
+        "android_client_info": {
+          "package_name": "ae.floarea.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAgyQPW3rVEVs4nYPhdETrv-MEG6WLMbwY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
