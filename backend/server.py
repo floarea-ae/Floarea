@@ -556,8 +556,8 @@ async def send_push_notification(req: PushSendReq):
             headers={"Content-Type": "application/json"}
         )
 
-    logger.info(f"Expo Push Status: {expo_response.status_code}")
-    logger.info(f"Expo Push Response: {expo_response.text}")
+        logger.info(f"Expo Push Status: {expo_response.status_code}")
+        logger.info(f"Expo Push Response: {expo_response.text}")
 
     return {"sent": len(messages)}
 
