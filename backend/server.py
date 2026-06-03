@@ -612,11 +612,23 @@ async def _get_notification_campaigns(limit: int = 50) -> list:
         raise HTTPException(status_code=500, detail="Failed to retrieve notification history")
     return response.json()
 
-async def _record_notification_campaign(title: str, body: str, recipient_count: int, status: str) -> None:
+async def _record_notification_campaign(
+    title: str,
+    body: str,
+    customer_count: int,
+    device_count: int,
+    success_count: int,
+    failed_count: int,
+    status: str
+) -> None:
     payload = {
         "title": title,
         "body": body,
-        "recipient_count": recipient_count,
+        "recipient_count": device_count,
+        "customer_count": customer_count,
+        "device_count": device_count,
+        "success_count": success_count,
+        "failed_count": failed_count,
         "status": status,
         "sent_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -624,39 +636,80 @@ async def _record_notification_campaign(title: str, body: str, recipient_count: 
     if response.status_code >= 400:
         raise HTTPException(status_code=500, detail="Failed to store notification campaign")
 
-async def _send_campaign_notification(title: str, body: str) -> tuple[int, str]:
-    response = await _supabase_request("GET", "/rest/v1/push_tokens", params={"select": "expo_token"})
+async def _remove_invalid_push_token(expo_token: str) -> None:
+    response = await _supabase_request(
+        "DELETE",
+        "/rest/v1/push_tokens",
+        params={"expo_token": f"eq.{expo_token}"}
+    )
+    if response.status_code >= 400:
+        logger.error(f"Failed to remove invalid Expo token: {expo_token}")
+
+async def _send_campaign_notification(title: str, body: str) -> tuple[int, int, int, int, str]:
+    response = await _supabase_request("GET", "/rest/v1/push_tokens", params={"select": "customer_id,expo_token"})
     if response.status_code >= 400:
         raise HTTPException(status_code=500, detail="Failed to retrieve push tokens")
 
     tokens = response.json()
-    messages = [
-        {"to": t["expo_token"], "title": title, "body": body, "data": {}, "sound": "default"}
+    valid_tokens = [
+        {"customer_id": t.get("customer_id"), "expo_token": t.get("expo_token")}
         for t in tokens
         if t.get("expo_token", "").startswith("ExponentPushToken")
     ]
-    if not messages:
-        return 0, "sent"
+    customer_count = len({t["customer_id"] for t in valid_tokens if t.get("customer_id")})
+    device_count = len(valid_tokens)
+    if not valid_tokens:
+        return customer_count, device_count, 0, 0, "failed"
 
-    failed_batches = 0
+    success_count = 0
+    failed_count = 0
     async with httpx.AsyncClient(timeout=10) as http:
-        for i in range(0, len(messages), 100):
-            batch = messages[i:i + 100]
+        for i in range(0, len(valid_tokens), 100):
+            batch_tokens = valid_tokens[i:i + 100]
+            batch_messages = [
+                {"to": t["expo_token"], "title": title, "body": body, "data": {}, "sound": "default"}
+                for t in batch_tokens
+            ]
             expo_response = await http.post(
                 EXPO_PUSH_URL,
-                json=batch,
+                json=batch_messages,
                 headers={"Content-Type": "application/json"}
             )
             logger.info(f"Expo Campaign Push Status: {expo_response.status_code}")
             logger.info(f"Expo Campaign Push Response: {expo_response.text}")
-            if expo_response.status_code >= 400:
-                failed_batches += 1
 
-    if failed_batches == 0:
-        return len(messages), "sent"
-    if failed_batches * 100 >= len(messages):
-        return len(messages), "failed"
-    return len(messages), "partial"
+            try:
+                expo_payload = expo_response.json()
+            except ValueError:
+                failed_count += len(batch_tokens)
+                continue
+
+            tickets = expo_payload.get("data") if isinstance(expo_payload, dict) else None
+            if not isinstance(tickets, list):
+                failed_count += len(batch_tokens)
+                continue
+
+            for token_data, ticket in zip(batch_tokens, tickets):
+                if ticket.get("status") == "ok":
+                    success_count += 1
+                    continue
+
+                failed_count += 1
+                details = ticket.get("details") or {}
+                if details.get("error") == "DeviceNotRegistered":
+                    await _remove_invalid_push_token(token_data["expo_token"])
+
+            if len(tickets) < len(batch_tokens):
+                failed_count += len(batch_tokens) - len(tickets)
+
+    if success_count == device_count:
+        status = "sent"
+    elif success_count > 0:
+        status = "partial"
+    else:
+        status = "failed"
+
+    return customer_count, device_count, success_count, failed_count, status
 
 @app.get("/admin/login")
 async def admin_login_page(request: Request):
@@ -729,9 +782,17 @@ async def admin_send_notification(request: Request, title: str = Form(...), body
     try:
         clean_title = title.strip()
         clean_body = body.strip()
-        recipient_count, status = await _send_campaign_notification(clean_title, clean_body)
-        await _record_notification_campaign(clean_title, clean_body, recipient_count, status)
-        message = quote(f"Notification sent to {recipient_count} devices")
+        customer_count, device_count, success_count, failed_count, status = await _send_campaign_notification(clean_title, clean_body)
+        await _record_notification_campaign(
+            clean_title,
+            clean_body,
+            customer_count,
+            device_count,
+            success_count,
+            failed_count,
+            status
+        )
+        message = quote(f"Notification sent to {success_count} of {device_count} devices")
         return RedirectResponse(url=f"/admin?message={message}", status_code=303)
     except Exception as e:
         logger.error(f"Admin notification send failed: {e}")
@@ -748,7 +809,7 @@ async def admin_export(request: Request):
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Notification Campaigns"
-    sheet.append(["ID", "Title", "Body", "Recipient Count", "Status", "Sent At"])
+    sheet.append(["ID", "Title", "Body", "Recipients", "Customers", "Devices", "Success", "Failed", "Status", "Sent At"])
 
     for campaign in campaigns:
         sheet.append([
@@ -756,6 +817,10 @@ async def admin_export(request: Request):
             campaign.get("title", ""),
             campaign.get("body", ""),
             campaign.get("recipient_count", 0),
+            campaign.get("customer_count", 0),
+            campaign.get("device_count", campaign.get("recipient_count", 0)),
+            campaign.get("success_count", 0),
+            campaign.get("failed_count", 0),
             campaign.get("status", ""),
             campaign.get("sent_at", ""),
         ])

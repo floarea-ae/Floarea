@@ -157,6 +157,10 @@
               <th>Title</th>
               <th>Body</th>
               <th>Recipients</th>
+              <th>Customers</th>
+              <th>Devices</th>
+              <th>Success</th>
+              <th>Failed</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -167,6 +171,10 @@
                 <td>{{ campaign.title }}</td>
                 <td class="body-cell">{{ campaign.body }}</td>
                 <td>{{ campaign.recipient_count }}</td>
+                <td>{{ campaign.get("customer_count", 0) }}</td>
+                <td>{{ campaign.get("device_count", campaign.get("recipient_count", 0)) }}</td>
+                <td>{{ campaign.get("success_count", 0) }}</td>
+                <td>{{ campaign.get("failed_count", 0) }}</td>
                 <td>{{ campaign.status }}</td>
               </tr>
             {% endfor %}
