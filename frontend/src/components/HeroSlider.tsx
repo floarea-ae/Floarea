@@ -3,6 +3,7 @@ import { View, StyleSheet, Dimensions, FlatList, TouchableOpacity, Text } from '
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { COLORS, FONTS } from '../constants';
+import { api } from '../api';
 
 const { width } = Dimensions.get('window');
 
@@ -38,15 +39,39 @@ const SLIDES = [
 
 export default function HeroSlider() {
   const router = useRouter();
+  const [slides, setSlides] = useState(SLIDES);
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
 
+  useEffect(() => {
+    api.get('/hero-slides')
+      .then((cmsSlides) => {
+        if (!Array.isArray(cmsSlides)) return;
+
+        setSlides(SLIDES.map((slide) => {
+          const cmsSlide = cmsSlides.find((item: any) => item.slide_key === slide.id);
+          if (!cmsSlide) return slide;
+
+          return {
+            ...slide,
+            overline: cmsSlide.overline ?? slide.overline,
+            title: cmsSlide.title ?? slide.title,
+            cta: cmsSlide.cta ?? slide.cta,
+            url: cmsSlide.url ?? slide.url,
+          };
+        }));
+      })
+      .catch(() => {
+        setSlides(SLIDES);
+      });
+  }, []);
+
   // Auto-scroll logic
   useEffect(() => {
-    if (SLIDES.length === 0) return;
+    if (slides.length === 0) return;
     const interval = setInterval(() => {
       let nextIndex = activeIndex + 1;
-      if (nextIndex >= SLIDES.length) {
+      if (nextIndex >= slides.length) {
         nextIndex = 0;
       }
       flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
@@ -54,7 +79,7 @@ export default function HeroSlider() {
     }, 4000); // 4 seconds per slide
 
     return () => clearInterval(interval);
-  }, [activeIndex]);
+  }, [activeIndex, slides.length]);
 
   const handleScroll = (event: any) => {
     const slideSize = event.nativeEvent.layoutMeasurement.width;
@@ -69,7 +94,7 @@ export default function HeroSlider() {
     <View style={styles.container}>
       <FlatList
         ref={flatListRef}
-        data={SLIDES}
+        data={slides}
         keyExtractor={(item) => item.id}
         horizontal
         pagingEnabled
@@ -105,7 +130,7 @@ export default function HeroSlider() {
 
       {/* Pagination Dots */}
       <View style={styles.pagination}>
-        {SLIDES.map((_, index) => (
+        {slides.map((_, index) => (
           <View
             key={`dot-${index}`}
             style={[

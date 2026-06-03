@@ -612,6 +612,16 @@ async def _get_notification_campaigns(limit: int = 50) -> list:
         raise HTTPException(status_code=500, detail="Failed to retrieve notification history")
     return response.json()
 
+async def _get_hero_slides() -> list:
+    params = {
+        "select": "slide_key,overline,title,cta,url",
+        "order": "slide_key.asc",
+    }
+    response = await _supabase_request("GET", "/rest/v1/hero_slides", params=params)
+    if response.status_code >= 400:
+        raise HTTPException(status_code=500, detail="Failed to retrieve hero slides")
+    return response.json()
+
 async def _record_notification_campaign(
     title: str,
     body: str,
@@ -774,6 +784,52 @@ async def admin_dashboard(
         context={"campaigns": campaigns, "message": message, "error": error}
     )
 
+@app.get("/admin/hero")
+async def admin_hero_page(request: Request, message: Optional[str] = Query(default=None), error: Optional[str] = Query(default=None)):
+    if not _is_admin_authenticated(request):
+        return _admin_redirect()
+    slides = await _get_hero_slides()
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/hero.html",
+        context={"slides": slides, "message": message, "error": error}
+    )
+
+@app.post("/admin/hero/save")
+async def admin_save_hero(
+    request: Request,
+    slide_key: List[str] = Form(...),
+    overline: List[str] = Form(...),
+    title: List[str] = Form(...),
+    cta: List[str] = Form(...),
+    url: List[str] = Form(...),
+):
+    if not _is_admin_authenticated(request):
+        return _admin_redirect()
+
+    try:
+        for index, key in enumerate(slide_key):
+            payload = {
+                "overline": overline[index].strip(),
+                "title": title[index].strip(),
+                "cta": cta[index].strip(),
+                "url": url[index].strip(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            response = await _supabase_request(
+                "PATCH",
+                "/rest/v1/hero_slides",
+                json_data=payload,
+                params={"slide_key": f"eq.{key}"},
+                headers={"Prefer": "return=minimal"}
+            )
+            if response.status_code >= 400:
+                raise HTTPException(status_code=500, detail="Failed to update hero slide")
+        return RedirectResponse(url="/admin/hero?message=Hero%20slides%20saved", status_code=303)
+    except Exception as e:
+        logger.error(f"Admin hero save failed: {e}")
+        return RedirectResponse(url="/admin/hero?error=Failed%20to%20save%20hero%20slides", status_code=303)
+
 @app.post("/admin/notifications/send")
 async def admin_send_notification(request: Request, title: str = Form(...), body: str = Form(...)):
     if not _is_admin_authenticated(request):
@@ -908,6 +964,10 @@ async def get_hero_banner():
         "cta_text": (collection.get("metafield2") or {}).get("value", ""),
         "cta_url": (collection.get("metafield3") or {}).get("value", ""),
     }
+
+@api_router.get("/hero-slides")
+async def get_hero_slides():
+    return await _get_hero_slides()
 
 
 # ─── Health ───

@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Floarea Hero CMS</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f6f3ee;
+      color: #1a2e20;
+    }
+    header {
+      background: #1a2e20;
+      color: #fff;
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    h1, h2 {
+      margin: 0;
+      font-weight: 500;
+    }
+    h1 {
+      font-size: 24px;
+    }
+    h2 {
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
+    main {
+      width: min(1100px, calc(100% - 32px));
+      margin: 24px auto;
+      display: grid;
+      gap: 24px;
+    }
+    section {
+      background: #fff;
+      border: 1px solid #e4ded4;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    label {
+      display: block;
+      margin: 12px 0 6px;
+      font-size: 14px;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #cfc7bc;
+      box-sizing: border-box;
+      font: inherit;
+    }
+    textarea {
+      min-height: 90px;
+      resize: vertical;
+    }
+    button, .button {
+      display: inline-block;
+      border: 0;
+      background: #1a2e20;
+      color: #fff;
+      padding: 11px 16px;
+      font-size: 14px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .secondary {
+      background: #6f6256;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    .notice {
+      padding: 12px 14px;
+      background: #e8f3e9;
+      border: 1px solid #bdd9c0;
+      color: #1f5d2b;
+    }
+    .error {
+      padding: 12px 14px;
+      background: #f9e7e7;
+      border: 1px solid #e5b9b9;
+      color: #9b1c1c;
+    }
+    .slide {
+      border-top: 1px solid #e4ded4;
+      padding-top: 20px;
+      margin-top: 20px;
+    }
+    .slide:first-child {
+      border-top: 0;
+      padding-top: 0;
+      margin-top: 0;
+    }
+    .slide-key {
+      color: #6f6256;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Floarea Hero CMS</h1>
+    <form method="post" action="/admin/logout">
+      <button class="secondary" type="submit">Logout</button>
+    </form>
+  </header>
+
+  <main>
+    {% if message %}
+      <div class="notice">{{ message }}</div>
+    {% endif %}
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <section>
+      <h2>Hero Slides</h2>
+      <form method="post" action="/admin/hero/save">
+        {% for slide in slides %}
+          <div class="slide">
+            <div class="slide-key">{{ slide.slide_key }}</div>
+            <input type="hidden" name="slide_key" value="{{ slide.slide_key }}">
+
+            <label for="overline-{{ loop.index }}">Overline</label>
+            <input id="overline-{{ loop.index }}" name="overline" type="text" value="{{ slide.overline or '' }}">
+
+            <label for="title-{{ loop.index }}">Title</label>
+            <textarea id="title-{{ loop.index }}" name="title">{{ slide.title or '' }}</textarea>
+
+            <label for="cta-{{ loop.index }}">CTA</label>
+            <input id="cta-{{ loop.index }}" name="cta" type="text" value="{{ slide.cta or '' }}">
+
+            <label for="url-{{ loop.index }}">URL</label>
+            <input id="url-{{ loop.index }}" name="url" type="text" value="{{ slide.url or '' }}">
+          </div>
+        {% endfor %}
+
+        <div class="actions">
+          <button type="submit">Save</button>
+          <a class="button secondary" href="/admin">Notifications</a>
+        </div>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
