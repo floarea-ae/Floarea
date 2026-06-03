@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Floarea Notifications</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f6f3ee;
+      color: #1a2e20;
+    }
+    header {
+      background: #1a2e20;
+      color: #fff;
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    h1, h2 {
+      margin: 0;
+      font-weight: 500;
+    }
+    h1 {
+      font-size: 24px;
+    }
+    h2 {
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
+    main {
+      width: min(1100px, calc(100% - 32px));
+      margin: 24px auto;
+      display: grid;
+      gap: 24px;
+    }
+    section {
+      background: #fff;
+      border: 1px solid #e4ded4;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    label {
+      display: block;
+      margin: 16px 0 6px;
+      font-size: 14px;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #cfc7bc;
+      box-sizing: border-box;
+      font: inherit;
+    }
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+    button, .button {
+      display: inline-block;
+      border: 0;
+      background: #1a2e20;
+      color: #fff;
+      padding: 11px 16px;
+      font-size: 14px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .secondary {
+      background: #6f6256;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    .notice {
+      padding: 12px 14px;
+      background: #e8f3e9;
+      border: 1px solid #bdd9c0;
+      color: #1f5d2b;
+    }
+    .error {
+      padding: 12px 14px;
+      background: #f9e7e7;
+      border: 1px solid #e5b9b9;
+      color: #9b1c1c;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border-bottom: 1px solid #e4ded4;
+      padding: 12px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #faf8f4;
+      font-weight: 600;
+    }
+    .empty {
+      color: #6f6256;
+    }
+    .body-cell {
+      max-width: 420px;
+      white-space: normal;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Floarea Notifications</h1>
+    <form method="post" action="/admin/logout">
+      <button class="secondary" type="submit">Logout</button>
+    </form>
+  </header>
+
+  <main>
+    {% if message %}
+      <div class="notice">{{ message }}</div>
+    {% endif %}
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <section>
+      <h2>Send Notification</h2>
+      <form method="post" action="/admin/notifications/send">
+        <label for="title">Title</label>
+        <input id="title" name="title" type="text" maxlength="120" required>
+
+        <label for="body">Body</label>
+        <textarea id="body" name="body" maxlength="500" required></textarea>
+
+        <div class="actions">
+          <button type="submit">Send Notification</button>
+          <a class="button secondary" href="/admin/export">Export XLSX</a>
+        </div>
+      </form>
+    </section>
+
+    <section>
+      <h2>Recent Notification History</h2>
+      {% if campaigns %}
+        <table>
+          <thead>
+            <tr>
+              <th>Sent At</th>
+              <th>Title</th>
+              <th>Body</th>
+              <th>Recipients</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for campaign in campaigns %}
+              <tr>
+                <td>{{ campaign.sent_at }}</td>
+                <td>{{ campaign.title }}</td>
+                <td class="body-cell">{{ campaign.body }}</td>
+                <td>{{ campaign.recipient_count }}</td>
+                <td>{{ campaign.status }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="empty">No notification campaigns yet.</p>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

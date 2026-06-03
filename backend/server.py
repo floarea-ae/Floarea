@@ -4,11 +4,17 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, HTTPException, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Header, Form, Query, Request
+from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.templating import Jinja2Templates
 from starlette.middleware.cors import CORSMiddleware
+from io import BytesIO
 import os
 import logging
 import httpx
+import hmac
+import hashlib
+from urllib.parse import quote
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timezone
@@ -25,6 +31,7 @@ SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
 app = FastAPI(title="Floarea API")
 api_router = APIRouter(prefix="/api")
+templates = Jinja2Templates(directory=str(ROOT_DIR / "templates"))
 
 app.add_middleware(
     CORSMiddleware,
@@ -562,6 +569,207 @@ async def send_push_notification(req: PushSendReq):
     return {"sent": len(messages)}
 
 # ─── Shopify Cart with Customer ───
+# Admin notification management
+ADMIN_COOKIE_NAME = "floarea_admin_session"
+
+def _admin_signature(username: str) -> str:
+    secret = os.environ.get("ADMIN_SESSION_SECRET", "")
+    return hmac.new(secret.encode("utf-8"), username.encode("utf-8"), hashlib.sha256).hexdigest()
+
+def _admin_cookie_value(username: str) -> str:
+    return f"{username}:{_admin_signature(username)}"
+
+def _is_admin_authenticated(request: Request) -> bool:
+    secret = os.environ.get("ADMIN_SESSION_SECRET", "")
+    if not secret:
+        logger.error("ADMIN_SESSION_SECRET is not configured")
+        return False
+
+    cookie_value = request.cookies.get(ADMIN_COOKIE_NAME, "")
+    if ":" not in cookie_value:
+        return False
+
+    username, signature = cookie_value.split(":", 1)
+    expected_username = os.environ.get("ADMIN_USERNAME", "")
+    expected_signature = _admin_signature(username)
+    return (
+        bool(expected_username)
+        and hmac.compare_digest(username, expected_username)
+        and hmac.compare_digest(signature, expected_signature)
+    )
+
+def _admin_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/admin/login", status_code=303)
+
+async def _get_notification_campaigns(limit: int = 50) -> list:
+    params = {
+        "select": "*",
+        "order": "sent_at.desc",
+        "limit": str(limit),
+    }
+    response = await _supabase_request("GET", "/rest/v1/notification_campaigns", params=params)
+    if response.status_code >= 400:
+        raise HTTPException(status_code=500, detail="Failed to retrieve notification history")
+    return response.json()
+
+async def _record_notification_campaign(title: str, body: str, recipient_count: int, status: str) -> None:
+    payload = {
+        "title": title,
+        "body": body,
+        "recipient_count": recipient_count,
+        "status": status,
+        "sent_at": datetime.now(timezone.utc).isoformat(),
+    }
+    response = await _supabase_request("POST", "/rest/v1/notification_campaigns", json_data=payload)
+    if response.status_code >= 400:
+        raise HTTPException(status_code=500, detail="Failed to store notification campaign")
+
+async def _send_campaign_notification(title: str, body: str) -> tuple[int, str]:
+    response = await _supabase_request("GET", "/rest/v1/push_tokens", params={"select": "expo_token"})
+    if response.status_code >= 400:
+        raise HTTPException(status_code=500, detail="Failed to retrieve push tokens")
+
+    tokens = response.json()
+    messages = [
+        {"to": t["expo_token"], "title": title, "body": body, "data": {}, "sound": "default"}
+        for t in tokens
+        if t.get("expo_token", "").startswith("ExponentPushToken")
+    ]
+    if not messages:
+        return 0, "sent"
+
+    failed_batches = 0
+    async with httpx.AsyncClient(timeout=10) as http:
+        for i in range(0, len(messages), 100):
+            batch = messages[i:i + 100]
+            expo_response = await http.post(
+                EXPO_PUSH_URL,
+                json=batch,
+                headers={"Content-Type": "application/json"}
+            )
+            logger.info(f"Expo Campaign Push Status: {expo_response.status_code}")
+            logger.info(f"Expo Campaign Push Response: {expo_response.text}")
+            if expo_response.status_code >= 400:
+                failed_batches += 1
+
+    if failed_batches == 0:
+        return len(messages), "sent"
+    if failed_batches * 100 >= len(messages):
+        return len(messages), "failed"
+    return len(messages), "partial"
+
+@app.get("/admin/login")
+async def admin_login_page(request: Request):
+    if _is_admin_authenticated(request):
+        return RedirectResponse(url="/admin", status_code=303)
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/login.html",
+        context={"error": None},
+    )
+
+@app.post("/admin/login")
+async def admin_login(request: Request, username: str = Form(...), password: str = Form(...)):
+    expected_username = os.environ.get("ADMIN_USERNAME", "")
+    expected_password = os.environ.get("ADMIN_PASSWORD", "")
+    session_secret = os.environ.get("ADMIN_SESSION_SECRET", "")
+
+    is_valid = (
+        expected_username
+        and expected_password
+        and session_secret
+        and hmac.compare_digest(username, expected_username)
+        and hmac.compare_digest(password, expected_password)
+    )
+    if not is_valid:
+        return templates.TemplateResponse(
+            request=request,
+            name="admin/login.html",
+            context={"error": "Invalid username or password"},
+            status_code=401
+        )
+
+    response = RedirectResponse(url="/admin", status_code=303)
+    response.set_cookie(
+        ADMIN_COOKIE_NAME,
+        _admin_cookie_value(username),
+        httponly=True,
+        secure=os.environ.get("ENV", "development").lower() == "production",
+        samesite="lax",
+        max_age=60 * 60 * 12,
+    )
+    return response
+
+@app.post("/admin/logout")
+async def admin_logout():
+    response = RedirectResponse(url="/admin/login", status_code=303)
+    response.delete_cookie(ADMIN_COOKIE_NAME)
+    return response
+
+@app.get("/admin")
+async def admin_dashboard(
+    request: Request,
+    message: Optional[str] = Query(default=None),
+    error: Optional[str] = Query(default=None),
+):
+    if not _is_admin_authenticated(request):
+        return _admin_redirect()
+    campaigns = await _get_notification_campaigns()
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/dashboard.html",
+        context={"campaigns": campaigns, "message": message, "error": error}
+    )
+
+@app.post("/admin/notifications/send")
+async def admin_send_notification(request: Request, title: str = Form(...), body: str = Form(...)):
+    if not _is_admin_authenticated(request):
+        return _admin_redirect()
+
+    try:
+        clean_title = title.strip()
+        clean_body = body.strip()
+        recipient_count, status = await _send_campaign_notification(clean_title, clean_body)
+        await _record_notification_campaign(clean_title, clean_body, recipient_count, status)
+        message = quote(f"Notification sent to {recipient_count} devices")
+        return RedirectResponse(url=f"/admin?message={message}", status_code=303)
+    except Exception as e:
+        logger.error(f"Admin notification send failed: {e}")
+        return RedirectResponse(url="/admin?error=Failed to send notification", status_code=303)
+
+@app.get("/admin/export")
+async def admin_export(request: Request):
+    if not _is_admin_authenticated(request):
+        return _admin_redirect()
+
+    from openpyxl import Workbook
+
+    campaigns = await _get_notification_campaigns(limit=10000)
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Notification Campaigns"
+    sheet.append(["ID", "Title", "Body", "Recipient Count", "Status", "Sent At"])
+
+    for campaign in campaigns:
+        sheet.append([
+            campaign.get("id", ""),
+            campaign.get("title", ""),
+            campaign.get("body", ""),
+            campaign.get("recipient_count", 0),
+            campaign.get("status", ""),
+            campaign.get("sent_at", ""),
+        ])
+
+    stream = BytesIO()
+    workbook.save(stream)
+    stream.seek(0)
+
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=notification_campaigns.xlsx"}
+    )
+
 @api_router.post("/cart/create-with-customer")
 async def create_cart_with_customer(
     req: CreateCartReq,
