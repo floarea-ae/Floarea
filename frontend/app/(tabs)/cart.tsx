@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../../src/context/AuthContext';
 import { useCart } from '../../src/context/CartContext';
 import { api } from '../../src/api';
@@ -17,17 +18,113 @@ export default function CartScreen() {
   const deliveryFee = total >= 500 ? 0 : 35;
   const grandTotal = total + deliveryFee;
 
+  // Dubai timezone helper (GMT+4)
+  function getDubaiTime(): Date {
+    const localDate = new Date();
+    const utc = localDate.getTime() + (localDate.getTimezoneOffset() * 60000);
+    return new Date(utc + (3600000 * 4));
+  }
+
+  function formatDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function displayDate(date: Date): string {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}`;
+  }
+
+  // Delivery Slots Definition
+  const DELIVERY_SLOTS = [
+    { label: '9 AM to 12 PM', endHour: 12 },
+    { label: '12 PM to 3 PM', endHour: 15 },
+    { label: '3 PM to 6 PM', endHour: 18 },
+    { label: '6 PM to 9 PM', endHour: 21 },
+    { label: '9 PM to 12 AM', endHour: 24 },
+  ];
+
+  function getAvailableSlots(date: Date): typeof DELIVERY_SLOTS {
+    const dubaiNow = getDubaiTime();
+    const isToday = formatDate(date) === formatDate(dubaiNow);
+    if (!isToday) {
+      return DELIVERY_SLOTS;
+    }
+    const currentHour = dubaiNow.getHours();
+    const currentMinute = dubaiNow.getMinutes();
+    return DELIVERY_SLOTS.filter(slot => {
+      if (currentHour > slot.endHour) return false;
+      if (currentHour === slot.endHour && currentMinute > 0) return false;
+      return true;
+    });
+  }
+
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    const dubaiTime = getDubaiTime();
+    const localDate = new Date();
+    localDate.setFullYear(dubaiTime.getFullYear());
+    localDate.setMonth(dubaiTime.getMonth());
+    localDate.setDate(dubaiTime.getDate());
+    localDate.setHours(dubaiTime.getHours());
+    localDate.setMinutes(dubaiTime.getMinutes());
+    localDate.setSeconds(0);
+    localDate.setMilliseconds(0);
+    return localDate;
+  });
+
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  const availableSlots = getAvailableSlots(selectedDate);
+
+  const handleDateChange = (event: any, date?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    if (date) {
+      setSelectedDate(date);
+      setSelectedSlot(null); // Reset slot selection when date changes
+    }
+  };
+
   async function handleCheckout() {
     if (items.length === 0) return;
+
+    // Validate delivery slot selection
+    const dubaiNow = getDubaiTime();
+    if (formatDate(selectedDate) < formatDate(dubaiNow)) {
+      Alert.alert('Invalid Date', 'Past dates are not allowed. Please select a valid delivery date.');
+      return;
+    }
+
+    if (availableSlots.length === 0) {
+      Alert.alert('Unavailable Date', 'No delivery slots are available for the selected date. Please select another date.');
+      return;
+    }
+
+    if (!selectedSlot) {
+      Alert.alert('Selection Required', 'Please select a delivery time slot before proceeding.');
+      return;
+    }
+
     setCheckingOut(true);
     try {
       const lines = items.map(item => ({
         variantId: item.variant_id,
         quantity: item.quantity,
       }));
+
+      const attributes = [
+        { key: 'Delivery Date', value: formatDate(selectedDate) },
+        { key: 'Delivery Time', value: selectedSlot }
+      ];
+
       const endpoint = shopifyToken ? '/cart/create-with-customer' : '/cart/create';
       const options = shopifyToken ? { useShopifyToken: true } : undefined;
-      const data = await api.post(endpoint, { lines }, options);
+      const data = await api.post(endpoint, { lines, attributes }, options);
       if (data.checkout_url) {
         router.push({ pathname: '/checkout', params: { url: data.checkout_url } });
       }
@@ -87,22 +184,99 @@ export default function CartScreen() {
           </View>
         )}
         ListFooterComponent={
-          <View style={styles.summary}>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Subtotal</Text>
-              <Text style={styles.summaryValue}>Dhs. {total.toLocaleString()}</Text>
+          <>
+            {/* Delivery Slots Selection */}
+            <View style={styles.deliverySection}>
+              <Text style={styles.sectionTitle}>Delivery Details</Text>
+              
+              {/* Date Selection */}
+              <View style={styles.pickerRow}>
+                <Text style={styles.pickerLabel}>Delivery Date</Text>
+                {Platform.OS === 'android' ? (
+                  <TouchableOpacity 
+                    testID="date-picker-trigger"
+                    style={styles.dateBtn} 
+                    onPress={() => setShowDatePicker(true)}
+                  >
+                    <Text style={styles.dateBtnText}>
+                      {displayDate(selectedDate)}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <DateTimePicker
+                    testID="ios-date-picker"
+                    value={selectedDate}
+                    mode="date"
+                    display="default"
+                    minimumDate={new Date()}
+                    onChange={handleDateChange}
+                    style={styles.iosDatePicker}
+                  />
+                )}
+              </View>
+
+              {Platform.OS === 'android' && showDatePicker && (
+                <DateTimePicker
+                  testID="android-date-picker"
+                  value={selectedDate}
+                  mode="date"
+                  display="default"
+                  minimumDate={new Date()}
+                  onChange={handleDateChange}
+                />
+              )}
+
+              {/* Time Slot Selection */}
+              <Text style={styles.pickerLabel}>Delivery Time Slot</Text>
+              {availableSlots.length === 0 ? (
+                <View style={styles.noSlotsContainer}>
+                  <Text style={styles.noSlotsText}>No delivery slots available for this date.</Text>
+                  <Text style={styles.noSlotsSubText}>Please select another date.</Text>
+                </View>
+              ) : (
+                <View style={styles.slotsGrid}>
+                  {availableSlots.map(slot => {
+                    const isSelected = selectedSlot === slot.label;
+                    return (
+                      <TouchableOpacity
+                        testID={`slot-${slot.label}`}
+                        key={slot.label}
+                        style={[
+                          styles.slotButton,
+                          isSelected && styles.slotButtonSelected
+                        ]}
+                        onPress={() => setSelectedSlot(slot.label)}
+                      >
+                        <Text style={[
+                          styles.slotButtonText,
+                          isSelected && styles.slotButtonTextSelected
+                        ]}>
+                          {slot.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
             </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Delivery</Text>
-              <Text style={styles.summaryValue}>{deliveryFee === 0 ? 'Free' : `Dhs. ${deliveryFee}`}</Text>
+
+            <View style={styles.summary}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Subtotal</Text>
+                <Text style={styles.summaryValue}>Dhs. {total.toLocaleString()}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Delivery</Text>
+                <Text style={styles.summaryValue}>{deliveryFee === 0 ? 'Free' : `Dhs. ${deliveryFee}`}</Text>
+              </View>
+              {deliveryFee === 0 && <Text style={styles.freeNote}>Free delivery on orders above Dhs. 500</Text>}
+              <View style={styles.divider} />
+              <View style={styles.summaryRow}>
+                <Text style={styles.totalLabel}>Total</Text>
+                <Text style={styles.totalValue}>Dhs. {grandTotal.toLocaleString()}</Text>
+              </View>
             </View>
-            {deliveryFee === 0 && <Text style={styles.freeNote}>Free delivery on orders above Dhs. 500</Text>}
-            <View style={styles.divider} />
-            <View style={styles.summaryRow}>
-              <Text style={styles.totalLabel}>Total</Text>
-              <Text style={styles.totalValue}>Dhs. {grandTotal.toLocaleString()}</Text>
-            </View>
-          </View>
+          </>
         }
       />
       <View style={styles.bottomBar}>
@@ -146,6 +320,21 @@ const styles = StyleSheet.create({
   qtyBtn: { width: 32, height: 32, borderRadius: 2, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center' },
   qtyText: { fontFamily: FONTS.bodyMedium, fontSize: 15, color: COLORS.text, minWidth: 20, textAlign: 'center' },
   removeBtn: { justifyContent: 'center', paddingLeft: 8 },
+  deliverySection: { backgroundColor: COLORS.white, borderRadius: 2, padding: 20, marginTop: 12, marginBottom: 4 },
+  sectionTitle: { fontFamily: FONTS.heading, fontSize: 20, color: COLORS.text, marginBottom: 16 },
+  pickerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  pickerLabel: { fontFamily: FONTS.bodyMedium, fontSize: 14, color: COLORS.text, marginBottom: 8 },
+  dateBtn: { backgroundColor: COLORS.surface, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 2, borderWidth: 1, borderColor: COLORS.border },
+  dateBtnText: { fontFamily: FONTS.body, fontSize: 14, color: COLORS.text },
+  iosDatePicker: { alignSelf: 'flex-end' },
+  slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  slotButton: { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, borderRadius: 2, paddingVertical: 12, paddingHorizontal: 14, width: '48%', marginBottom: 4, alignItems: 'center' },
+  slotButtonSelected: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  slotButtonText: { fontFamily: FONTS.body, fontSize: 13, color: COLORS.text },
+  slotButtonTextSelected: { fontFamily: FONTS.bodyMedium, color: COLORS.white },
+  noSlotsContainer: { paddingVertical: 16, alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: 2, marginTop: 4 },
+  noSlotsText: { fontFamily: FONTS.bodySemiBold, fontSize: 14, color: COLORS.accent },
+  noSlotsSubText: { fontFamily: FONTS.body, fontSize: 12, color: COLORS.textMuted, marginTop: 4 },
   summary: { backgroundColor: COLORS.white, borderRadius: 2, padding: 20, marginTop: 8 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   summaryLabel: { fontFamily: FONTS.body, fontSize: 14, color: COLORS.textMuted },

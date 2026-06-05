@@ -159,8 +159,13 @@ class CartLineInput(BaseModel):
     variantId: str
     quantity: int = 1
 
+class CartAttributeInput(BaseModel):
+    key: str
+    value: str
+
 class CreateCartReq(BaseModel):
     lines: List[CartLineInput]
+    attributes: Optional[List[CartAttributeInput]] = None
 
 
 # ─── Auth Routes ───
@@ -295,9 +300,13 @@ async def get_product(handle: str):
 @api_router.post("/cart/create")
 async def create_cart(req: CreateCartReq):
     lines = [{"merchandiseId": line.variantId, "quantity": line.quantity} for line in req.lines]
+    cart_input = {"lines": lines}
+    if req.attributes:
+        cart_input["attributes"] = [{"key": attr.key, "value": attr.value} for attr in req.attributes]
+        
     mutation = """
-    mutation($lines: [CartLineInput!]!) {
-      cartCreate(input: { lines: $lines }) {
+    mutation($input: CartInput!) {
+      cartCreate(input: $input) {
         cart {
           id
           checkoutUrl
@@ -307,7 +316,7 @@ async def create_cart(req: CreateCartReq):
       }
     }
     """
-    data = await shopify_graphql(mutation, {"lines": lines})
+    data = await shopify_graphql(mutation, {"input": cart_input})
     cart_data = data.get("cartCreate", {})
     errors = cart_data.get("userErrors", [])
     if errors:
@@ -897,26 +906,21 @@ async def create_cart_with_customer(
     shopify_token: Optional[str] = Header(default=None, alias="x-shopify-customer-token"),
 ):
     lines = [{"merchandiseId": line.variantId, "quantity": line.quantity} for line in req.lines]
+    cart_input = {"lines": lines}
+    if req.attributes:
+        cart_input["attributes"] = [{"key": attr.key, "value": attr.value} for attr in req.attributes]
     if shopify_token:
-        mutation = """
-        mutation($lines: [CartLineInput!]!, $token: String!) {
-          cartCreate(input: { lines: $lines, buyerIdentity: { customerAccessToken: $token } }) {
-            cart { id checkoutUrl cost { totalAmount { amount currencyCode } } }
-            userErrors { field message }
-          }
-        }
-        """
-        data = await shopify_graphql(mutation, {"lines": lines, "token": shopify_token})
-    else:
-        mutation = """
-        mutation($lines: [CartLineInput!]!) {
-          cartCreate(input: { lines: $lines }) {
-            cart { id checkoutUrl cost { totalAmount { amount currencyCode } } }
-            userErrors { field message }
-          }
-        }
-        """
-        data = await shopify_graphql(mutation, {"lines": lines})
+        cart_input["buyerIdentity"] = {"customerAccessToken": shopify_token}
+        
+    mutation = """
+    mutation($input: CartInput!) {
+      cartCreate(input: $input) {
+        cart { id checkoutUrl cost { totalAmount { amount currencyCode } } }
+        userErrors { field message }
+      }
+    }
+    """
+    data = await shopify_graphql(mutation, {"input": cart_input})
     cart_data = data.get("cartCreate", {})
     errors = cart_data.get("userErrors", [])
     if errors:
