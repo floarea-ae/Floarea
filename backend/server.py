@@ -29,7 +29,16 @@ SHOPIFY_GRAPHQL_URL = f"https://{SHOPIFY_STORE}/api/{SHOPIFY_API_VERSION}/graphq
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
-app = FastAPI(title="Floarea API")
+# Disable API documentation in production to avoid schema exposure
+_ENV = os.environ.get('ENV', 'development').lower()
+_IS_PRODUCTION = _ENV == 'production' or os.environ.get('PRODUCTION', 'false').lower() == 'true'
+
+app = FastAPI(
+    title="Floarea API",
+    docs_url=None if _IS_PRODUCTION else "/docs",
+    redoc_url=None if _IS_PRODUCTION else "/redoc",
+    openapi_url=None if _IS_PRODUCTION else "/openapi.json",
+)
 api_router = APIRouter(prefix="/api")
 templates = Jinja2Templates(directory=str(ROOT_DIR / "templates"))
 
@@ -766,9 +775,10 @@ async def admin_login(request: Request, username: str = Form(...), password: str
         ADMIN_COOKIE_NAME,
         _admin_cookie_value(username),
         httponly=True,
-        secure=os.environ.get("ENV", "development").lower() == "production",
+        secure=_IS_PRODUCTION,
         samesite="lax",
         max_age=60 * 60 * 12,
+        path="/admin",  # Restrict cookie to admin paths only
     )
     return response
 
@@ -804,6 +814,9 @@ async def admin_hero_page(request: Request, message: Optional[str] = Query(defau
         context={"slides": slides, "message": message, "error": error}
     )
 
+# ─── Hero CMS field limits ───
+_HERO_LIMITS = {"overline": 100, "title": 200, "cta": 50, "url": 500}
+
 @app.post("/admin/hero/save")
 async def admin_save_hero(
     request: Request,
@@ -818,11 +831,30 @@ async def admin_save_hero(
 
     try:
         for index, key in enumerate(slide_key):
+            clean_overline = overline[index].strip()
+            clean_title = title[index].strip()
+            clean_cta = cta[index].strip()
+            clean_url = url[index].strip()
+
+            # Validate field lengths
+            if len(clean_overline) > _HERO_LIMITS["overline"]:
+                error = quote(f"Slide {key}: Overline must be {_HERO_LIMITS['overline']} characters or fewer.")
+                return RedirectResponse(url=f"/admin/hero?error={error}", status_code=303)
+            if len(clean_title) > _HERO_LIMITS["title"]:
+                error = quote(f"Slide {key}: Title must be {_HERO_LIMITS['title']} characters or fewer.")
+                return RedirectResponse(url=f"/admin/hero?error={error}", status_code=303)
+            if len(clean_cta) > _HERO_LIMITS["cta"]:
+                error = quote(f"Slide {key}: CTA must be {_HERO_LIMITS['cta']} characters or fewer.")
+                return RedirectResponse(url=f"/admin/hero?error={error}", status_code=303)
+            if len(clean_url) > _HERO_LIMITS["url"]:
+                error = quote(f"Slide {key}: URL must be {_HERO_LIMITS['url']} characters or fewer.")
+                return RedirectResponse(url=f"/admin/hero?error={error}", status_code=303)
+
             payload = {
-                "overline": overline[index].strip(),
-                "title": title[index].strip(),
-                "cta": cta[index].strip(),
-                "url": url[index].strip(),
+                "overline": clean_overline,
+                "title": clean_title,
+                "cta": clean_cta,
+                "url": clean_url,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             response = await _supabase_request(
@@ -847,6 +879,17 @@ async def admin_send_notification(request: Request, title: str = Form(...), body
     try:
         clean_title = title.strip()
         clean_body = body.strip()
+
+        # Validate notification content
+        if not clean_title:
+            return RedirectResponse(url="/admin?error=Notification+title+is+required", status_code=303)
+        if not clean_body:
+            return RedirectResponse(url="/admin?error=Notification+body+is+required", status_code=303)
+        if len(clean_title) > 120:
+            return RedirectResponse(url="/admin?error=Title+must+be+120+characters+or+fewer", status_code=303)
+        if len(clean_body) > 500:
+            return RedirectResponse(url="/admin?error=Body+must+be+500+characters+or+fewer", status_code=303)
+
         customer_count, device_count, success_count, failed_count, status = await _send_campaign_notification(clean_title, clean_body)
         await _record_notification_campaign(
             clean_title,
@@ -861,44 +904,48 @@ async def admin_send_notification(request: Request, title: str = Form(...), body
         return RedirectResponse(url=f"/admin?message={message}", status_code=303)
     except Exception as e:
         logger.error(f"Admin notification send failed: {e}")
-        return RedirectResponse(url="/admin?error=Failed to send notification", status_code=303)
+        return RedirectResponse(url="/admin?error=Failed+to+send+notification", status_code=303)
 
 @app.get("/admin/export")
 async def admin_export(request: Request):
     if not _is_admin_authenticated(request):
         return _admin_redirect()
 
-    from openpyxl import Workbook
+    try:
+        from openpyxl import Workbook
 
-    campaigns = await _get_notification_campaigns(limit=10000)
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = "Notification Campaigns"
-    sheet.append(["ID", "Title", "Body", "Recipients", "Customers", "Devices", "Success", "Failed", "Status", "Sent At"])
+        campaigns = await _get_notification_campaigns(limit=10000)
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Notification Campaigns"
+        sheet.append(["ID", "Title", "Body", "Recipients", "Customers", "Devices", "Success", "Failed", "Status", "Sent At"])
 
-    for campaign in campaigns:
-        sheet.append([
-            campaign.get("id", ""),
-            campaign.get("title", ""),
-            campaign.get("body", ""),
-            campaign.get("recipient_count", 0),
-            campaign.get("customer_count", 0),
-            campaign.get("device_count", campaign.get("recipient_count", 0)),
-            campaign.get("success_count", 0),
-            campaign.get("failed_count", 0),
-            campaign.get("status", ""),
-            campaign.get("sent_at", ""),
-        ])
+        for campaign in campaigns:
+            sheet.append([
+                campaign.get("id", ""),
+                campaign.get("title", ""),
+                campaign.get("body", ""),
+                campaign.get("recipient_count", 0),
+                campaign.get("customer_count", 0),
+                campaign.get("device_count", campaign.get("recipient_count", 0)),
+                campaign.get("success_count", 0),
+                campaign.get("failed_count", 0),
+                campaign.get("status", ""),
+                campaign.get("sent_at", ""),
+            ])
 
-    stream = BytesIO()
-    workbook.save(stream)
-    stream.seek(0)
+        stream = BytesIO()
+        workbook.save(stream)
+        stream.seek(0)
 
-    return StreamingResponse(
-        stream,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=notification_campaigns.xlsx"}
-    )
+        return StreamingResponse(
+            stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=notification_campaigns.xlsx"}
+        )
+    except Exception as e:
+        logger.error(f"Admin export failed: {e}")
+        return RedirectResponse(url="/admin?error=Export+failed", status_code=303)
 
 @api_router.post("/cart/create-with-customer")
 async def create_cart_with_customer(
@@ -985,10 +1032,7 @@ app.include_router(api_router)
 # ─── Startup ───
 @app.on_event("startup")
 async def startup():
-    env = os.environ.get('ENV', 'development').lower()
-    is_production = env == 'production' or os.environ.get('PRODUCTION', 'false').lower() == 'true'
-
-    if not is_production:
+    if not _IS_PRODUCTION:
         try:
             # NON-DB operations (safe for dev only)
             os.makedirs("/app/memory", exist_ok=True)
@@ -1010,4 +1054,4 @@ async def startup():
     else:
         logger.info("Skipping test credentials file write in production.")
 
-    logger.info(f"Startup complete. Shopify store: {SHOPIFY_STORE}")
+    logger.info(f"Startup complete. ENV={_ENV}. Shopify store: {SHOPIFY_STORE}")
