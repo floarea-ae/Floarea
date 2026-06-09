@@ -9,6 +9,8 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.cors import CORSMiddleware
 from io import BytesIO
+import base64
+import json
 import os
 import logging
 import httpx
@@ -22,6 +24,7 @@ from datetime import datetime, timezone
 # Shopify config
 SHOPIFY_STORE = os.environ.get('SHOPIFY_STORE_DOMAIN')
 SHOPIFY_TOKEN = os.environ.get('SHOPIFY_STOREFRONT_TOKEN')
+SHOPIFY_WEBHOOK_SECRET = os.environ.get('SHOPIFY_WEBHOOK_SECRET', '')
 SHOPIFY_API_VERSION = "2024-10"
 SHOPIFY_GRAPHQL_URL = f"https://{SHOPIFY_STORE}/api/{SHOPIFY_API_VERSION}/graphql.json"
 
@@ -673,21 +676,21 @@ async def _remove_invalid_push_token(expo_token: str) -> None:
     if response.status_code >= 400:
         logger.error(f"Failed to remove invalid Expo token: {expo_token}")
 
-async def _send_campaign_notification(title: str, body: str) -> tuple[int, int, int, int, str]:
-    response = await _supabase_request("GET", "/rest/v1/push_tokens", params={"select": "customer_id,expo_token"})
-    if response.status_code >= 400:
-        raise HTTPException(status_code=500, detail="Failed to retrieve push tokens")
-
-    tokens = response.json()
+async def _send_expo_notifications_to_tokens(
+    tokens: list,
+    title: str,
+    body: str,
+    data: Optional[dict] = None,
+    log_context: str = "Expo Push"
+) -> tuple[int, int, int, str]:
     valid_tokens = [
         {"customer_id": t.get("customer_id"), "expo_token": t.get("expo_token")}
         for t in tokens
         if t.get("expo_token", "").startswith("ExponentPushToken")
     ]
-    customer_count = len({t["customer_id"] for t in valid_tokens if t.get("customer_id")})
     device_count = len(valid_tokens)
     if not valid_tokens:
-        return customer_count, device_count, 0, 0, "failed"
+        return 0, 0, 0, "failed"
 
     success_count = 0
     failed_count = 0
@@ -695,7 +698,7 @@ async def _send_campaign_notification(title: str, body: str) -> tuple[int, int, 
         for i in range(0, len(valid_tokens), 100):
             batch_tokens = valid_tokens[i:i + 100]
             batch_messages = [
-                {"to": t["expo_token"], "title": title, "body": body, "data": {}, "sound": "default"}
+                {"to": t["expo_token"], "title": title, "body": body, "data": data or {}, "sound": "default"}
                 for t in batch_tokens
             ]
             expo_response = await http.post(
@@ -703,8 +706,8 @@ async def _send_campaign_notification(title: str, body: str) -> tuple[int, int, 
                 json=batch_messages,
                 headers={"Content-Type": "application/json"}
             )
-            logger.info(f"Expo Campaign Push Status: {expo_response.status_code}")
-            logger.info(f"Expo Campaign Push Response: {expo_response.text}")
+            logger.info(f"{log_context} Status: {expo_response.status_code}")
+            logger.info(f"{log_context} Response: {expo_response.text}")
 
             try:
                 expo_payload = expo_response.json()
@@ -737,7 +740,174 @@ async def _send_campaign_notification(title: str, body: str) -> tuple[int, int, 
     else:
         status = "failed"
 
+    return device_count, success_count, failed_count, status
+
+async def _send_campaign_notification(title: str, body: str) -> tuple[int, int, int, int, str]:
+    response = await _supabase_request("GET", "/rest/v1/push_tokens", params={"select": "customer_id,expo_token"})
+    if response.status_code >= 400:
+        raise HTTPException(status_code=500, detail="Failed to retrieve push tokens")
+
+    tokens = response.json()
+    valid_tokens = [t for t in tokens if t.get("expo_token", "").startswith("ExponentPushToken")]
+    customer_count = len({t["customer_id"] for t in valid_tokens if t.get("customer_id")})
+    device_count, success_count, failed_count, status = await _send_expo_notifications_to_tokens(
+        valid_tokens,
+        title,
+        body,
+        log_context="Expo Campaign Push"
+    )
+
     return customer_count, device_count, success_count, failed_count, status
+
+async def verify_shopify_webhook(request: Request, shopify_hmac: Optional[str]) -> dict:
+    raw_body = await request.body()
+    if not SHOPIFY_WEBHOOK_SECRET or not shopify_hmac:
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    digest = hmac.new(
+        SHOPIFY_WEBHOOK_SECRET.encode("utf-8"),
+        raw_body,
+        hashlib.sha256
+    ).digest()
+    calculated_hmac = base64.b64encode(digest).decode("utf-8")
+    if not hmac.compare_digest(calculated_hmac, shopify_hmac.strip()):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    try:
+        return json.loads(raw_body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid webhook payload")
+
+def _shopify_customer_gid(customer_id: Optional[object]) -> Optional[str]:
+    if customer_id is None:
+        return None
+    customer_id_str = str(customer_id).strip()
+    if not customer_id_str:
+        return None
+    if customer_id_str.startswith("gid://shopify/Customer/"):
+        return customer_id_str
+    return f"gid://shopify/Customer/{customer_id_str}"
+
+def _extract_webhook_customer_id(payload: dict) -> Optional[object]:
+    customer = payload.get("customer")
+    if isinstance(customer, dict) and customer.get("id"):
+        return customer.get("id")
+
+    if payload.get("customer_id"):
+        return payload.get("customer_id")
+
+    order = payload.get("order")
+    if isinstance(order, dict):
+        order_customer = order.get("customer")
+        if isinstance(order_customer, dict) and order_customer.get("id"):
+            return order_customer.get("id")
+        if order.get("customer_id"):
+            return order.get("customer_id")
+
+    return None
+
+async def send_notification_to_customer(
+    customer_id: Optional[object],
+    title: str,
+    body: str,
+    webhook_type: str
+) -> dict:
+    customer_gid = _shopify_customer_gid(customer_id)
+    if not customer_gid:
+        logger.info(f"{webhook_type}: missing customer id; no notification sent")
+        return {"sent": 0, "success": 0, "failed": 0, "status": "skipped"}
+
+    response = await _supabase_request(
+        "GET",
+        "/rest/v1/push_tokens",
+        params={"select": "customer_id,expo_token", "customer_id": f"eq.{customer_gid}"}
+    )
+    if response.status_code >= 400:
+        logger.error(f"{webhook_type}: failed to retrieve push tokens for customer {customer_gid}")
+        return {"sent": 0, "success": 0, "failed": 0, "status": "token_lookup_failed"}
+
+    tokens = response.json()
+    token_count = len([t for t in tokens if t.get("expo_token", "").startswith("ExponentPushToken")])
+    if token_count == 0:
+        logger.info(f"{webhook_type}: customer {customer_gid}; token_count=0; no notification sent")
+        return {"sent": 0, "success": 0, "failed": 0, "status": "no_tokens"}
+
+    device_count, success_count, failed_count, status = await _send_expo_notifications_to_tokens(
+        tokens,
+        title,
+        body,
+        data={"type": webhook_type},
+        log_context=f"Shopify {webhook_type} Push"
+    )
+    logger.info(
+        f"{webhook_type}: customer {customer_gid}; token_count={token_count}; "
+        f"sent={device_count}; success={success_count}; failed={failed_count}; status={status}"
+    )
+    return {"sent": device_count, "success": success_count, "failed": failed_count, "status": status}
+
+async def _handle_shopify_transactional_webhook(
+    request: Request,
+    shopify_hmac: Optional[str],
+    webhook_type: str,
+    title: str,
+    body: str
+) -> dict:
+    payload = await verify_shopify_webhook(request, shopify_hmac)
+    customer_id = _extract_webhook_customer_id(payload)
+    result = await send_notification_to_customer(customer_id, title, body, webhook_type)
+    return {"status": "ok", "notification": result}
+
+@app.post("/webhooks/orders/create")
+async def webhook_orders_create(
+    request: Request,
+    shopify_hmac: Optional[str] = Header(default=None, alias="X-Shopify-Hmac-Sha256")
+):
+    return await _handle_shopify_transactional_webhook(
+        request,
+        shopify_hmac,
+        "orders/create",
+        "🌹 Order Received",
+        "Your order has been received and is being prepared."
+    )
+
+@app.post("/webhooks/fulfillments/create")
+async def webhook_fulfillments_create(
+    request: Request,
+    shopify_hmac: Optional[str] = Header(default=None, alias="X-Shopify-Hmac-Sha256")
+):
+    return await _handle_shopify_transactional_webhook(
+        request,
+        shopify_hmac,
+        "fulfillments/create",
+        "🚚 Order On The Way",
+        "Your flowers are on the way."
+    )
+
+@app.post("/webhooks/orders/cancelled")
+async def webhook_orders_cancelled(
+    request: Request,
+    shopify_hmac: Optional[str] = Header(default=None, alias="X-Shopify-Hmac-Sha256")
+):
+    return await _handle_shopify_transactional_webhook(
+        request,
+        shopify_hmac,
+        "orders/cancelled",
+        "⚠️ Order Cancelled",
+        "Your order has been cancelled. Please contact support if needed."
+    )
+
+@app.post("/webhooks/refunds/create")
+async def webhook_refunds_create(
+    request: Request,
+    shopify_hmac: Optional[str] = Header(default=None, alias="X-Shopify-Hmac-Sha256")
+):
+    return await _handle_shopify_transactional_webhook(
+        request,
+        shopify_hmac,
+        "refunds/create",
+        "💳 Refund Processed",
+        "A refund has been issued for your order."
+    )
 
 @app.get("/admin/login")
 async def admin_login_page(request: Request):
