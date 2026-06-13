@@ -51,18 +51,23 @@ export default function HomeScreen() {
             style={styles.logoImage} 
             contentFit="contain" 
           />
-          <TouchableOpacity testID="search-btn" onPress={() => router.push('/shop')}>
-            <Ionicons name="search-outline" size={24} color={COLORS.text} />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity testID="wishlist-header-btn" onPress={() => router.push('/(tabs)/wishlist')}>
+              <Ionicons name="heart-outline" size={24} color={COLORS.text} />
+            </TouchableOpacity>
+            <TouchableOpacity testID="search-btn" onPress={() => router.push('/shop')}>
+              <Ionicons name="search-outline" size={24} color={COLORS.text} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Hero Slider */}
         <HeroSlider />
 
-        {/* Categories */}
+        {/* Occasions */}
         {collections.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Shop by Category</Text>
+            <Text style={styles.sectionTitle}>Perfect Gift For Every Occasion</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catScroll}>
               {collections.map((cat) => (
                 <TouchableOpacity
@@ -86,22 +91,23 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Services */}
-        <View style={styles.servicesRow}>
-          {[
-            { icon: 'flash-outline', title: 'Fast Delivery', sub: 'Same-day across Dubai' },
-            { icon: 'flower-outline', title: 'Fresh Flowers', sub: 'Handpicked daily' },
-            { icon: 'color-palette-outline', title: 'Tailor Made', sub: 'Custom arrangements' },
-          ].map((svc, i) => (
-            <View key={i} style={styles.serviceItem}>
-              <View style={styles.serviceIcon}>
-                <Ionicons name={svc.icon as any} size={22} color={COLORS.primary} />
-              </View>
-              <Text style={styles.serviceTitle}>{svc.title}</Text>
-              <Text style={styles.serviceSub}>{svc.sub}</Text>
+        {/* Promo Banner */}
+        <TouchableOpacity style={styles.promoBanner} onPress={() => router.push({ pathname: '/shop', params: { collection: 'forever-special-occasion-roses' } })} activeOpacity={0.9}>
+          <Image
+            source={{ uri: products[2]?.image || '' }}
+            style={styles.promoImage}
+            contentFit="cover"
+          />
+          <View style={styles.promoOverlay}>
+            <Text style={styles.promoOverline}>FOREVER ROSES</Text>
+            <Text style={styles.promoTitle}>Preserved to{'\n'}Last Forever</Text>
+            <View style={styles.promoBtn}>
+              <Text style={styles.promoBtnText}>EXPLORE</Text>
             </View>
-          ))}
-        </View>
+          </View>
+        </TouchableOpacity>
+
+
 
         {/* Products */}
         <View style={styles.section}>
@@ -118,21 +124,22 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Promo Banner */}
-        <TouchableOpacity style={styles.promoBanner} onPress={() => router.push({ pathname: '/shop', params: { collection: 'forever-special-occasion-roses' } })} activeOpacity={0.9}>
-          <Image
-            source={{ uri: products[2]?.image || '' }}
-            style={styles.promoImage}
-            contentFit="cover"
-          />
-          <View style={styles.promoOverlay}>
-            <Text style={styles.promoOverline}>FOREVER ROSES</Text>
-            <Text style={styles.promoTitle}>Preserved to{'\n'}Last Forever</Text>
-            <View style={styles.promoBtn}>
-              <Text style={styles.promoBtnText}>EXPLORE</Text>
+        {/* Services */}
+        <View style={styles.servicesRow}>
+          {[
+            { icon: 'flash-outline', title: 'Fast Delivery', sub: 'Same-day across Dubai' },
+            { icon: 'flower-outline', title: 'Fresh Flowers', sub: 'Handpicked daily' },
+            { icon: 'color-palette-outline', title: 'Tailor Made', sub: 'Custom arrangements' },
+          ].map((svc, i) => (
+            <View key={i} style={styles.serviceItem}>
+              <View style={styles.serviceIcon}>
+                <Ionicons name={svc.icon as any} size={22} color={COLORS.primary} />
+              </View>
+              <Text style={styles.serviceTitle}>{svc.title}</Text>
+              <Text style={styles.serviceSub}>{svc.sub}</Text>
             </View>
-          </View>
-        </TouchableOpacity>
+          ))}
+        </View>
 
         {/* Footer */}
         <View style={styles.footer}>
@@ -151,6 +158,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 18 },
   logoImage: { width: 160, height: 40 },
   section: { paddingHorizontal: 16, marginTop: 36 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
