@@ -789,6 +789,73 @@ async def _get_promo_banner() -> dict:
         }
     return {}
 
+
+async def _get_generic_banner(banner_type: str) -> dict:
+    query = f"""
+    query GetGenericBanner {{
+      metaobjects(type: "{banner_type}", first: 10) {{
+        edges {{
+          node {{
+            id
+            handle
+            fields {{
+              key
+              value
+              reference {{
+                ... on MediaImage {{
+                  image {{
+                    url
+                  }}
+                }}
+              }}
+            }}
+          }}
+        }}
+      }}
+    }}
+    """
+    try:
+        data = await shopify_graphql(query)
+    except Exception as e:
+        logger.error(f"Error querying Shopify {banner_type} banner: {e}")
+        return {}
+
+    edges = data.get("metaobjects", {}).get("edges", [])
+    for edge in edges:
+        node = edge.get("node", {})
+        if not node:
+            continue
+        transformed = transform_metaobject_fields(node)
+        
+        active_val = transformed.get("active", "false")
+        if isinstance(active_val, bool):
+            is_active = active_val
+        elif isinstance(active_val, str):
+            is_active = active_val.lower() == "true"
+        else:
+            is_active = bool(active_val)
+            
+        if not is_active:
+            continue
+            
+        return {
+            "title": transformed.get("title", ""),
+            "subtitle": transformed.get("subtitle", ""),
+            "cta_text": transformed.get("cta_text", ""),
+            "desktop_image": transformed.get("desktop_image", ""),
+            "mobile_image": transformed.get("mobile_image", ""),
+            "active": is_active
+        }
+    return {}
+
+
+async def _get_events_banner() -> dict:
+    return await _get_generic_banner("events_banner")
+
+
+async def _get_custom_gift_banner() -> dict:
+    return await _get_generic_banner("custom_gift_banner")
+
 async def _record_notification_campaign(
     title: str,
     body: str,
@@ -1273,6 +1340,14 @@ async def get_hero_slides():
 @api_router.get("/promo-banner")
 async def get_promo_banner():
     return await _get_promo_banner()
+
+@api_router.get("/events-banner")
+async def get_events_banner():
+    return await _get_events_banner()
+
+@api_router.get("/custom-gift-banner")
+async def get_custom_gift_banner():
+    return await _get_custom_gift_banner()
 
 
 # ─── Health ───

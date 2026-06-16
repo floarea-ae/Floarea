@@ -1,35 +1,46 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Linking } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../src/api';
-import { COLORS, FONTS } from '../../src/constants';
+import { COLORS, FONTS, WHATSAPP_URL } from '../../src/constants';
 import ProductCard from '../../src/components/ProductCard';
 import WhatsAppButton from '../../src/components/WhatsAppButton';
 import HeroSlider from '../../src/components/HeroSlider';
+import PromoBanner from '../../src/components/PromoBanner';
 
 export default function HomeScreen() {
   const router = useRouter();
   const [collections, setCollections] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [promoBanner, setPromoBanner] = useState<any>(null);
+  const [eventsBanner, setEventsBanner] = useState<any>(null);
+  const [customGiftBanner, setCustomGiftBanner] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
     try {
-      const [colData, prodData, promoData] = await Promise.all([
+      const [colData, prodData, promoData, eventsData, giftData] = await Promise.all([
         api.get('/collections?featured_only=true'),
         api.get('/products?first=8'),
         api.get('/promo-banner').catch(() => null),
+        api.get('/events-banner').catch(() => null),
+        api.get('/custom-gift-banner').catch(() => null),
       ]);
       setCollections(colData.collections || []);
       setProducts(prodData.products || []);
       if (promoData && Object.keys(promoData).length > 0) {
         setPromoBanner(promoData);
+      }
+      if (eventsData && Object.keys(eventsData).length > 0) {
+        setEventsBanner(eventsData);
+      }
+      if (giftData && Object.keys(giftData).length > 0) {
+        setCustomGiftBanner(giftData);
       }
     } catch (e) {
       console.error('Load error:', e);
@@ -97,34 +108,13 @@ export default function HomeScreen() {
         )}
 
         {/* Promo Banner */}
-        {(() => {
-          const overline = promoBanner?.overline || 'FOREVER ROSES';
-          const title = promoBanner?.title || 'Preserved to\nLast Forever';
-          const ctaText = promoBanner?.cta_text || 'EXPLORE';
-          const ctaUrl = promoBanner?.cta_url || '/shop?collection=forever-special-occasion-roses';
-          const imageUri = promoBanner?.mobile_image || promoBanner?.desktop_image || products[2]?.image || '';
-
-          return (
-            <TouchableOpacity 
-              style={styles.promoBanner} 
-              onPress={() => router.push(ctaUrl as any)} 
-              activeOpacity={0.9}
-            >
-              <Image
-                source={{ uri: imageUri }}
-                style={styles.promoImage}
-                contentFit="cover"
-              />
-              <View style={styles.promoOverlay}>
-                <Text style={styles.promoOverline}>{overline}</Text>
-                <Text style={styles.promoTitle}>{title}</Text>
-                <View style={styles.promoBtn}>
-                  <Text style={styles.promoBtnText}>{ctaText}</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          );
-        })()}
+        <PromoBanner
+          title={promoBanner?.title || 'Preserved to\nLast Forever'}
+          subtitle={promoBanner?.overline || 'FOREVER ROSES'}
+          ctaText={promoBanner?.cta_text || 'EXPLORE'}
+          image={promoBanner?.mobile_image || promoBanner?.desktop_image || products[2]?.image || ''}
+          onPress={() => router.push((promoBanner?.cta_url || '/shop?collection=forever-special-occasion-roses') as any)}
+        />
 
 
 
@@ -143,6 +133,15 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Events Banner */}
+        <PromoBanner
+          title={eventsBanner?.title || 'Floarea Events'}
+          subtitle={eventsBanner?.subtitle || 'Bespoke Floral Design'}
+          ctaText={eventsBanner?.cta_text || 'INQUIRE NOW'}
+          image={eventsBanner?.mobile_image || eventsBanner?.desktop_image || 'https://floarea.ae/cdn/shop/files/floarea_mobile_banner_v2.png'}
+          onPress={() => router.push('/events')}
+        />
+
         {/* Services */}
         <View style={styles.servicesRow}>
           {[
@@ -159,6 +158,15 @@ export default function HomeScreen() {
             </View>
           ))}
         </View>
+
+        {/* Custom Gift Banner */}
+        <PromoBanner
+          title={customGiftBanner?.title || 'Customized Gifts'}
+          subtitle={customGiftBanner?.subtitle || 'Tailored to Perfection'}
+          ctaText={customGiftBanner?.cta_text || 'CHAT ON WHATSAPP'}
+          image={customGiftBanner?.mobile_image || customGiftBanner?.desktop_image || 'https://floarea.ae/cdn/shop/files/banner_mobile_normal.jpg'}
+          onPress={() => Linking.openURL(WHATSAPP_URL)}
+        />
 
         {/* Footer */}
         <View style={styles.footer}>
