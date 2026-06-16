@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../src/api';
+import { useAuth } from '../../src/context/AuthContext';
 import { useCart } from '../../src/context/CartContext';
 import { useWishlist } from '../../src/context/WishlistContext';
 import { COLORS, FONTS } from '../../src/constants';
@@ -15,6 +16,7 @@ const { width } = Dimensions.get('window');
 export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { shopifyToken } = useAuth();
   const { addItem } = useCart();
   const { toggleItem, isInWishlist } = useWishlist();
   const [product, setProduct] = useState<any>(null);
@@ -48,6 +50,14 @@ export default function ProductDetailScreen() {
   const images = product.images || [product.image];
 
   function handleAddToCart() {
+    if (!shopifyToken) {
+      Alert.alert('Login Required', 'Please sign in to add items to your cart.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign In', onPress: () => router.push('/auth') },
+      ]);
+      return;
+    }
+
     addItem({
       variant_id: product.variant_id,
       handle: product.handle,

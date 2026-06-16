@@ -93,6 +93,14 @@ export default function CartScreen() {
   async function handleCheckout() {
     if (items.length === 0) return;
 
+    if (!shopifyToken) {
+      Alert.alert('Login Required', 'Please sign in before checkout.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign In', onPress: () => router.push('/auth') },
+      ]);
+      return;
+    }
+
     // Validate delivery slot selection
     const dubaiNow = getDubaiTime();
     if (formatDate(selectedDate) < formatDate(dubaiNow)) {

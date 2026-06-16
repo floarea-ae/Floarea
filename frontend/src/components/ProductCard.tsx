@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { COLORS, FONTS } from '../constants';
@@ -23,9 +24,25 @@ type ProductCardProps = {
 
 export default function ProductCard({ product }: ProductCardProps) {
   const router = useRouter();
+  const { shopifyToken } = useAuth();
   const { addItem } = useCart();
   const { toggleItem, isInWishlist } = useWishlist();
   const liked = isInWishlist(product.handle);
+
+  function handleAddToCart() {
+    if (!shopifyToken) {
+      Alert.alert('Login Required', 'Please sign in to add items to your cart.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign In', onPress: () => router.push('/auth') },
+      ]);
+      return;
+    }
+
+    addItem({
+      variant_id: product.variant_id, handle: product.handle,
+      name: product.title, price: product.price, image: product.image,
+    });
+  }
 
   return (
     <TouchableOpacity
@@ -59,12 +76,7 @@ export default function ProductCard({ product }: ProductCardProps) {
           <TouchableOpacity
             testID={`add-to-cart-${product.handle}`}
             style={styles.addBtn}
-            onPress={() => {
-              addItem({
-                variant_id: product.variant_id, handle: product.handle,
-                name: product.title, price: product.price, image: product.image,
-              });
-            }}
+            onPress={handleAddToCart}
           >
             <Ionicons name="add" size={18} color={COLORS.white} />
           </TouchableOpacity>

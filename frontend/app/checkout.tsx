@@ -1,17 +1,25 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import WebView from 'react-native-webview';
+import { useAuth } from '../src/context/AuthContext';
 import { useCart } from '../src/context/CartContext';
 import { COLORS, FONTS } from '../src/constants';
 
 export default function CheckoutScreen() {
   const { url } = useLocalSearchParams<{ url: string }>();
   const router = useRouter();
+  const { shopifyToken } = useAuth();
   const { clearCart } = useCart();
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!shopifyToken) {
+      router.replace('/auth');
+    }
+  }, [router, shopifyToken]);
 
   function handleNavigationChange(navState: any) {
     const currentUrl = navState.url || '';
@@ -19,6 +27,16 @@ export default function CheckoutScreen() {
     if (currentUrl.includes('/thank_you') || currentUrl.includes('/orders/')) {
       clearCart();
     }
+  }
+
+  if (!shopifyToken) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      </SafeAreaView>
+    );
   }
 
   if (!url) {
