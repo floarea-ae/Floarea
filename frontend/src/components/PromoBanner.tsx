@@ -30,8 +30,8 @@ export default function PromoBanner({
         contentFit="cover"
       />
       <View style={styles.promoOverlay}>
-        {subtitle ? <Text style={styles.promoOverline}>{subtitle}</Text> : null}
         <Text style={styles.promoTitle}>{title}</Text>
+        {subtitle ? <Text style={styles.promoOverline}>{subtitle}</Text> : null}
         <View style={styles.promoBtn}>
           <Text style={styles.promoBtnText}>{ctaText}</Text>
         </View>
