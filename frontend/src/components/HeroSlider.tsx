@@ -46,18 +46,21 @@ export default function HeroSlider() {
   useEffect(() => {
     api.get('/hero-slides')
       .then((cmsSlides) => {
-        if (!Array.isArray(cmsSlides)) return;
+        if (!Array.isArray(cmsSlides) || cmsSlides.length === 0) {
+          setSlides(SLIDES);
+          return;
+        }
 
-        setSlides(SLIDES.map((slide) => {
-          const cmsSlide = cmsSlides.find((item: any) => item.slide_key === slide.id);
-          if (!cmsSlide) return slide;
-
+        setSlides(cmsSlides.map((cmsSlide: any) => {
+          const fallbackMatch = SLIDES.find((s) => s.id === cmsSlide.handle);
           return {
-            ...slide,
-            overline: cmsSlide.overline ?? slide.overline,
-            title: cmsSlide.title ?? slide.title,
-            cta: cmsSlide.cta ?? slide.cta,
-            url: cmsSlide.url ?? slide.url,
+            id: cmsSlide.handle || cmsSlide.id || Math.random().toString(),
+            image: cmsSlide.mobile_image || cmsSlide.desktop_image || (fallbackMatch ? fallbackMatch.image : SLIDES[0].image),
+            url: cmsSlide.cta_url || (fallbackMatch ? fallbackMatch.url : '/shop'),
+            overline: cmsSlide.overline ?? (fallbackMatch ? fallbackMatch.overline : ''),
+            title: cmsSlide.title ?? (fallbackMatch ? fallbackMatch.title : ''),
+            cta: cmsSlide.cta_text ?? (fallbackMatch ? fallbackMatch.cta : 'SHOP NOW'),
+            alignment: cmsSlide.alignment || (fallbackMatch ? (fallbackMatch as any).alignment : undefined),
           };
         }));
       })

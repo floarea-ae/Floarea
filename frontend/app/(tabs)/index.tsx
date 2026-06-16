@@ -14,18 +14,23 @@ export default function HomeScreen() {
   const router = useRouter();
   const [collections, setCollections] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [promoBanner, setPromoBanner] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
     try {
-      const [colData, prodData] = await Promise.all([
+      const [colData, prodData, promoData] = await Promise.all([
         api.get('/collections?featured_only=true'),
         api.get('/products?first=8'),
+        api.get('/promo-banner').catch(() => null),
       ]);
       setCollections(colData.collections || []);
       setProducts(prodData.products || []);
+      if (promoData && Object.keys(promoData).length > 0) {
+        setPromoBanner(promoData);
+      }
     } catch (e) {
       console.error('Load error:', e);
     } finally {
@@ -92,20 +97,34 @@ export default function HomeScreen() {
         )}
 
         {/* Promo Banner */}
-        <TouchableOpacity style={styles.promoBanner} onPress={() => router.push({ pathname: '/shop', params: { collection: 'forever-special-occasion-roses' } })} activeOpacity={0.9}>
-          <Image
-            source={{ uri: products[2]?.image || '' }}
-            style={styles.promoImage}
-            contentFit="cover"
-          />
-          <View style={styles.promoOverlay}>
-            <Text style={styles.promoOverline}>FOREVER ROSES</Text>
-            <Text style={styles.promoTitle}>Preserved to{'\n'}Last Forever</Text>
-            <View style={styles.promoBtn}>
-              <Text style={styles.promoBtnText}>EXPLORE</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
+        {(() => {
+          const overline = promoBanner?.overline || 'FOREVER ROSES';
+          const title = promoBanner?.title || 'Preserved to\nLast Forever';
+          const ctaText = promoBanner?.cta_text || 'EXPLORE';
+          const ctaUrl = promoBanner?.cta_url || '/shop?collection=forever-special-occasion-roses';
+          const imageUri = promoBanner?.mobile_image || promoBanner?.desktop_image || products[2]?.image || '';
+
+          return (
+            <TouchableOpacity 
+              style={styles.promoBanner} 
+              onPress={() => router.push(ctaUrl as any)} 
+              activeOpacity={0.9}
+            >
+              <Image
+                source={{ uri: imageUri }}
+                style={styles.promoImage}
+                contentFit="cover"
+              />
+              <View style={styles.promoOverlay}>
+                <Text style={styles.promoOverline}>{overline}</Text>
+                <Text style={styles.promoTitle}>{title}</Text>
+                <View style={styles.promoBtn}>
+                  <Text style={styles.promoBtnText}>{ctaText}</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          );
+        })()}
 
 
 

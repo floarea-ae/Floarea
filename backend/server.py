@@ -164,6 +164,27 @@ def transform_collection(node: dict) -> dict:
     }
 
 
+def transform_metaobject_fields(node: dict) -> dict:
+    result = {
+        "id": node.get("id"),
+        "handle": node.get("handle")
+    }
+    for field in node.get("fields", []):
+        key = field.get("key")
+        if not key:
+            continue
+        ref = field.get("reference")
+        if ref and isinstance(ref, dict):
+            image = ref.get("image")
+            if image and isinstance(image, dict):
+                result[key] = image.get("url", "")
+            else:
+                result[key] = ""
+        else:
+            result[key] = field.get("value", "")
+    return result
+
+
 # ─── Auth Helpers ───
 
 # ─── Auth Models ───
@@ -634,14 +655,139 @@ async def _get_notification_campaigns(limit: int = 50) -> list:
     return response.json()
 
 async def _get_hero_slides() -> list:
-    params = {
-        "select": "slide_key,overline,title,cta,url",
-        "order": "slide_key.asc",
+    query = """
+    query GetHeroSlides {
+      metaobjects(type: "hero_slide", first: 50) {
+        edges {
+          node {
+            id
+            handle
+            fields {
+              key
+              value
+              reference {
+                ... on MediaImage {
+                  image {
+                    url
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
-    response = await _supabase_request("GET", "/rest/v1/hero_slides", params=params)
-    if response.status_code >= 400:
-        raise HTTPException(status_code=500, detail="Failed to retrieve hero slides")
-    return response.json()
+    """
+    try:
+        data = await shopify_graphql(query)
+    except Exception as e:
+        logger.error(f"Error querying Shopify hero slides: {e}")
+        return []
+
+    edges = data.get("metaobjects", {}).get("edges", [])
+    slides = []
+    for edge in edges:
+        node = edge.get("node", {})
+        if not node:
+            continue
+        transformed = transform_metaobject_fields(node)
+        
+        # Check active status
+        active_val = transformed.get("active", "false")
+        if isinstance(active_val, bool):
+            is_active = active_val
+        elif isinstance(active_val, str):
+            is_active = active_val.lower() == "true"
+        else:
+            is_active = bool(active_val)
+            
+        if not is_active:
+            continue
+            
+        # Parse sort order
+        sort_val = transformed.get("sort_order")
+        try:
+            sort_order = int(sort_val) if sort_val is not None else 0
+        except (ValueError, TypeError):
+            sort_order = 0
+            
+        slides.append({
+            "overline": transformed.get("overline", ""),
+            "title": transformed.get("title", ""),
+            "subtitle": transformed.get("subtitle", ""),
+            "cta_text": transformed.get("cta_text", ""),
+            "cta_url": transformed.get("cta_url", ""),
+            "desktop_image": transformed.get("desktop_image", ""),
+            "mobile_image": transformed.get("mobile_image", ""),
+            "active": is_active,
+            "sort_order": sort_order,
+            "id": transformed.get("id"),
+            "handle": transformed.get("handle")
+        })
+        
+    slides.sort(key=lambda s: s["sort_order"])
+    return slides
+
+
+async def _get_promo_banner() -> dict:
+    query = """
+    query GetPromoBanner {
+      metaobjects(type: "promo_banner", first: 10) {
+        edges {
+          node {
+            id
+            handle
+            fields {
+              key
+              value
+              reference {
+                ... on MediaImage {
+                  image {
+                    url
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    try:
+        data = await shopify_graphql(query)
+    except Exception as e:
+        logger.error(f"Error querying Shopify promo banner: {e}")
+        return {}
+
+    edges = data.get("metaobjects", {}).get("edges", [])
+    for edge in edges:
+        node = edge.get("node", {})
+        if not node:
+            continue
+        transformed = transform_metaobject_fields(node)
+        
+        active_val = transformed.get("active", "false")
+        if isinstance(active_val, bool):
+            is_active = active_val
+        elif isinstance(active_val, str):
+            is_active = active_val.lower() == "true"
+        else:
+            is_active = bool(active_val)
+            
+        if not is_active:
+            continue
+            
+        return {
+            "overline": transformed.get("overline", ""),
+            "title": transformed.get("title", ""),
+            "subtitle": transformed.get("subtitle", ""),
+            "cta_text": transformed.get("cta_text", ""),
+            "cta_url": transformed.get("cta_url", ""),
+            "desktop_image": transformed.get("desktop_image", ""),
+            "mobile_image": transformed.get("mobile_image", ""),
+            "active": is_active
+        }
+    return {}
 
 async def _record_notification_campaign(
     title: str,
@@ -973,73 +1119,7 @@ async def admin_dashboard(
         context={"campaigns": campaigns, "message": message, "error": error}
     )
 
-@app.get("/admin/hero")
-async def admin_hero_page(request: Request, message: Optional[str] = Query(default=None), error: Optional[str] = Query(default=None)):
-    if not _is_admin_authenticated(request):
-        return _admin_redirect()
-    slides = await _get_hero_slides()
-    return templates.TemplateResponse(
-        request=request,
-        name="admin/hero.html",
-        context={"slides": slides, "message": message, "error": error}
-    )
-
-# ─── Hero CMS field limits ───
-_HERO_LIMITS = {"overline": 100, "title": 200, "cta": 50, "url": 500}
-
-@app.post("/admin/hero/save")
-async def admin_save_hero(
-    request: Request,
-    slide_key: List[str] = Form(...),
-    overline: List[str] = Form(...),
-    title: List[str] = Form(...),
-    cta: List[str] = Form(...),
-    url: List[str] = Form(...),
-):
-    if not _is_admin_authenticated(request):
-        return _admin_redirect()
-
-    try:
-        for index, key in enumerate(slide_key):
-            clean_overline = overline[index].strip()
-            clean_title = title[index].strip()
-            clean_cta = cta[index].strip()
-            clean_url = url[index].strip()
-
-            # Validate field lengths
-            if len(clean_overline) > _HERO_LIMITS["overline"]:
-                error = quote(f"Slide {key}: Overline must be {_HERO_LIMITS['overline']} characters or fewer.")
-                return RedirectResponse(url=f"/admin/hero?error={error}", status_code=303)
-            if len(clean_title) > _HERO_LIMITS["title"]:
-                error = quote(f"Slide {key}: Title must be {_HERO_LIMITS['title']} characters or fewer.")
-                return RedirectResponse(url=f"/admin/hero?error={error}", status_code=303)
-            if len(clean_cta) > _HERO_LIMITS["cta"]:
-                error = quote(f"Slide {key}: CTA must be {_HERO_LIMITS['cta']} characters or fewer.")
-                return RedirectResponse(url=f"/admin/hero?error={error}", status_code=303)
-            if len(clean_url) > _HERO_LIMITS["url"]:
-                error = quote(f"Slide {key}: URL must be {_HERO_LIMITS['url']} characters or fewer.")
-                return RedirectResponse(url=f"/admin/hero?error={error}", status_code=303)
-
-            payload = {
-                "overline": clean_overline,
-                "title": clean_title,
-                "cta": clean_cta,
-                "url": clean_url,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
-            response = await _supabase_request(
-                "PATCH",
-                "/rest/v1/hero_slides",
-                json_data=payload,
-                params={"slide_key": f"eq.{key}"},
-                headers={"Prefer": "return=minimal"}
-            )
-            if response.status_code >= 400:
-                raise HTTPException(status_code=500, detail="Failed to update hero slide")
-        return RedirectResponse(url="/admin/hero?message=Hero%20slides%20saved", status_code=303)
-    except Exception as e:
-        logger.error(f"Admin hero save failed: {e}")
-        return RedirectResponse(url="/admin/hero?error=Failed%20to%20save%20hero%20slides", status_code=303)
+# (Admin hero routes removed)
 
 @app.post("/admin/notifications/send")
 async def admin_send_notification(request: Request, title: str = Form(...), body: str = Form(...)):
@@ -1189,6 +1269,10 @@ async def get_hero_banner():
 @api_router.get("/hero-slides")
 async def get_hero_slides():
     return await _get_hero_slides()
+
+@api_router.get("/promo-banner")
+async def get_promo_banner():
+    return await _get_promo_banner()
 
 
 # ─── Health ───
