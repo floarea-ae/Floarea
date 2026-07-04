@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
+import { Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,27 +8,16 @@ import { COLORS, FONTS } from '../src/constants';
 
 export default function AuthScreen() {
   const router = useRouter();
-  const { login, register } = useAuth();
-  const [isLogin, setIsLogin] = useState(true);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [phone, setPhone] = useState('');
+  const { login } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+
   async function handleSubmit() {
     setError('');
-    if (!email || !password) { setError('Please fill in all required fields'); return; }
-    if (!isLogin && !name) { setError('Please enter your name'); return; }
-    if (password.length < 5) { setError('Password must be at least 5 characters'); return; }
     setLoading(true);
     try {
-      if (isLogin) {
-        await login(email, password);
-      } else {
-        await register(name, email, password, phone);
-      }
+      await login();
       router.back();
     } catch (e: any) {
       setError(e.message || 'Something went wrong');
@@ -39,58 +28,27 @@ export default function AuthScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          <TouchableOpacity testID="close-auth" style={styles.closeBtn} onPress={() => router.back()}>
-            <Ionicons name="close" size={24} color={COLORS.text} />
-          </TouchableOpacity>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <TouchableOpacity testID="close-auth" style={styles.closeBtn} onPress={() => router.back()}>
+          <Ionicons name="close" size={24} color={COLORS.text} />
+        </TouchableOpacity>
 
-          <Text style={styles.brand}>FLOAREA</Text>
-          <Text style={styles.title}>{isLogin ? 'Welcome Back' : 'Create Account'}</Text>
-          <Text style={styles.subtitle}>{isLogin ? 'Sign in with your Floarea account' : 'Create your Floarea account'}</Text>
+        <Text style={styles.brand}>FLOAREA</Text>
+        <Text style={styles.title}>Welcome Back</Text>
+        <Text style={styles.subtitle}>Sign in with your Floarea account</Text>
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-          {!isLogin && (
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>FULL NAME</Text>
-              <TextInput testID="name-input" style={styles.input} value={name} onChangeText={setName} placeholder="Enter your name" placeholderTextColor={COLORS.textMuted} autoCapitalize="words" />
-            </View>
+        <TouchableOpacity testID="submit-auth-btn" style={styles.submitBtn} onPress={handleSubmit} disabled={loading}>
+          {loading ? (
+            <ActivityIndicator size="small" color={COLORS.white} />
+          ) : (
+            <Text style={styles.submitBtnText}>SIGN IN</Text>
           )}
+        </TouchableOpacity>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>EMAIL</Text>
-            <TextInput testID="email-input" style={styles.input} value={email} onChangeText={setEmail} placeholder="Enter your email" placeholderTextColor={COLORS.textMuted} keyboardType="email-address" autoCapitalize="none" />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>PASSWORD</Text>
-            <TextInput testID="password-input" style={styles.input} value={password} onChangeText={setPassword} placeholder="Enter your password" placeholderTextColor={COLORS.textMuted} secureTextEntry />
-          </View>
-
-          {!isLogin && (
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>PHONE (OPTIONAL)</Text>
-              <TextInput testID="phone-input" style={styles.input} value={phone} onChangeText={setPhone} placeholder="+971 50 000 0000" placeholderTextColor={COLORS.textMuted} keyboardType="phone-pad" />
-            </View>
-          )}
-
-          <TouchableOpacity testID="submit-auth-btn" style={styles.submitBtn} onPress={handleSubmit} disabled={loading}>
-            {loading ? (
-              <ActivityIndicator size="small" color={COLORS.white} />
-            ) : (
-              <Text style={styles.submitBtnText}>{isLogin ? 'SIGN IN' : 'CREATE ACCOUNT'}</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity testID="toggle-auth-mode" style={styles.toggleBtn} onPress={() => { setIsLogin(!isLogin); setError(''); }}>
-            <Text style={styles.toggleText}>
-              {isLogin ? "Don't have an account? " : 'Already have an account? '}
-              <Text style={styles.toggleLink}>{isLogin ? 'Sign Up' : 'Sign In'}</Text>
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -103,12 +61,7 @@ const styles = StyleSheet.create({
   title: { fontFamily: FONTS.headingLight, fontSize: 32, color: COLORS.text, textAlign: 'center', marginTop: 16 },
   subtitle: { fontFamily: FONTS.body, fontSize: 14, color: COLORS.textMuted, textAlign: 'center', marginTop: 8, marginBottom: 32 },
   errorText: { fontFamily: FONTS.body, fontSize: 13, color: COLORS.accent, textAlign: 'center', marginBottom: 16, backgroundColor: 'rgba(139,35,50,0.08)', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 2 },
-  inputGroup: { marginBottom: 20 },
-  label: { fontFamily: FONTS.bodySemiBold, fontSize: 11, color: COLORS.textMuted, letterSpacing: 2, marginBottom: 8 },
-  input: { fontFamily: FONTS.body, fontSize: 15, color: COLORS.text, backgroundColor: COLORS.white, paddingHorizontal: 16, paddingVertical: 16, borderRadius: 2, borderWidth: 1, borderColor: COLORS.border },
   submitBtn: { backgroundColor: COLORS.primary, paddingVertical: 18, alignItems: 'center', marginTop: 8, borderRadius: 2 },
   submitBtnText: { fontFamily: FONTS.bodySemiBold, fontSize: 14, color: COLORS.white, letterSpacing: 3 },
-  toggleBtn: { marginTop: 24, alignItems: 'center' },
-  toggleText: { fontFamily: FONTS.body, fontSize: 14, color: COLORS.textMuted },
-  toggleLink: { fontFamily: FONTS.bodyMedium, color: COLORS.primary },
+
 });

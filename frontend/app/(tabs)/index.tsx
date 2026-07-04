@@ -121,7 +121,7 @@ export default function HomeScreen() {
         {/* Products */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Our Collection</Text>
+            <Text style={styles.sectionTitle}>Luxury Flowers, Exclusively for You</Text>
             <TouchableOpacity testID="view-all-btn" onPress={() => router.push('/shop')}>
               <Text style={styles.viewAll}>View All</Text>
             </TouchableOpacity>
