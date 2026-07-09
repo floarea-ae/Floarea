@@ -24,9 +24,12 @@ from datetime import datetime, timezone
 # Shopify config
 SHOPIFY_STORE = os.environ.get('SHOPIFY_STORE_DOMAIN')
 SHOPIFY_TOKEN = os.environ.get('SHOPIFY_STOREFRONT_TOKEN')
+SHOPIFY_ADMIN_TOKEN = os.environ.get('SHOPIFY_ADMIN_ACCESS_TOKEN')
 SHOPIFY_WEBHOOK_SECRET = os.environ.get('SHOPIFY_WEBHOOK_SECRET', '')
 SHOPIFY_API_VERSION = "2024-10"
 SHOPIFY_GRAPHQL_URL = f"https://{SHOPIFY_STORE}/api/{SHOPIFY_API_VERSION}/graphql.json"
+SHOPIFY_ADMIN_API_VERSION = "2026-07"
+SHOPIFY_ADMIN_GRAPHQL_URL = f"https://{SHOPIFY_STORE}/admin/api/{SHOPIFY_ADMIN_API_VERSION}/graphql.json"
 
 # Supabase config
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
@@ -87,7 +90,51 @@ async def shopify_graphql(query: str, variables: dict = None) -> dict:
         return data.get("data", {})
 
 
-# ─── Supabase Helper ───
+# ─── Shopify Admin GraphQL Helper ───
+async def shopify_admin_graphql(query: str, variables: dict = None) -> dict:
+    if not SHOPIFY_STORE:
+        logger.error("SHOPIFY_STORE_DOMAIN is not configured")
+        raise HTTPException(status_code=500, detail="Shopify store domain missing")
+    if not SHOPIFY_ADMIN_TOKEN:
+        logger.error("SHOPIFY_ADMIN_ACCESS_TOKEN is not configured")
+        raise HTTPException(status_code=500, detail="Shopify Admin API token missing")
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": SHOPIFY_ADMIN_TOKEN,
+    }
+    payload = {"query": query}
+    if variables:
+        payload["variables"] = variables
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client_http:
+            response = await client_http.post(SHOPIFY_ADMIN_GRAPHQL_URL, json=payload, headers=headers)
+    except httpx.RequestError as e:
+        logger.error(f"Shopify Admin API network error: {e}")
+        raise HTTPException(status_code=503, detail="Shopify Admin API unavailable")
+
+    if response.status_code in (401, 403):
+        logger.error(f"Shopify Admin API authentication failed: {response.status_code} - {response.text}")
+        raise HTTPException(status_code=401, detail="Invalid Shopify Admin API token")
+    if response.status_code >= 400:
+        logger.error(f"Shopify Admin API HTTP error: {response.status_code} - {response.text}")
+        raise HTTPException(status_code=502, detail="Shopify Admin API error")
+
+    try:
+        data = response.json()
+    except ValueError:
+        logger.error(f"Shopify Admin API returned non-JSON response: {response.text}")
+        raise HTTPException(status_code=502, detail="Invalid Shopify Admin API response")
+
+    if "errors" in data:
+        logger.error(f"Shopify Admin GraphQL errors: {data['errors']}")
+        raise HTTPException(status_code=502, detail="Shopify Admin GraphQL error")
+
+    return data.get("data", {})
+
+
+# Supabase Helper
 async def _supabase_request(
     method: str,
     path: str,
@@ -1351,6 +1398,29 @@ async def get_custom_gift_banner():
 
 
 # ─── Health ───
+@api_router.get("/admin-test")
+async def admin_test():
+    query = """
+    {
+      shop {
+        name
+        myshopifyDomain
+        primaryDomain {
+          url
+          host
+        }
+      }
+    }
+    """
+    data = await shopify_admin_graphql(query)
+    return {
+        "status": "ok",
+        "shop": data.get("shop", {}),
+        "admin_api_version": SHOPIFY_ADMIN_API_VERSION,
+        "token_present": bool(SHOPIFY_ADMIN_TOKEN)
+    }
+
+
 @api_router.get("/health")
 async def health():
     return {"status": "ok", "service": "Floarea API", "shopify_connected": bool(SHOPIFY_TOKEN)}
