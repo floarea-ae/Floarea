@@ -232,7 +232,175 @@ def transform_metaobject_fields(node: dict) -> dict:
     return result
 
 
-# ─── Auth Helpers ───
+# ─── Homepage Layout Helpers ───
+HOMEPAGE_TEMPLATE_FILE = "templates/index.json"
+HOMEPAGE_SECTION_TYPES = {
+    "slider": "hero",
+    "collection-list": "occasions",
+    "custom-content": "promoBanner",
+    "blurred-section": "eventsBanner",
+}
+
+
+def _normalize_theme_section_type(section_type: str) -> str:
+    normalized = (section_type or "").strip().lower()
+    if "/" in normalized:
+        normalized = normalized.rsplit("/", 1)[-1]
+    if normalized.endswith(".liquid"):
+        normalized = normalized[:-7]
+    return normalized
+
+
+def _is_theme_item_disabled(item: dict) -> bool:
+    return bool((item or {}).get("disabled"))
+
+
+def _ordered_theme_sections(template: dict) -> list:
+    sections = template.get("sections") or {}
+    order = template.get("order") or []
+    ordered = []
+    seen = set()
+
+    for section_id in order:
+        section = sections.get(section_id)
+        if section:
+            ordered.append((section_id, section))
+            seen.add(section_id)
+
+    for section_id, section in sections.items():
+        if section_id not in seen:
+            ordered.append((section_id, section))
+
+    return ordered
+
+
+def _clean_theme_blocks(section: dict) -> list:
+    blocks = section.get("blocks") or {}
+    block_order = section.get("block_order") or []
+    ordered_blocks = []
+    seen = set()
+
+    for block_id in block_order:
+        block = blocks.get(block_id)
+        if block:
+            ordered_blocks.append((block_id, block))
+            seen.add(block_id)
+
+    for block_id, block in blocks.items():
+        if block_id not in seen:
+            ordered_blocks.append((block_id, block))
+
+    return [
+        {
+            "id": block_id,
+            "type": block.get("type", ""),
+            "settings": block.get("settings") or {},
+        }
+        for block_id, block in ordered_blocks
+        if not _is_theme_item_disabled(block)
+    ]
+
+
+def _clean_theme_section(section_id: str, section: dict) -> dict:
+    return {
+        "id": section_id,
+        "type": section.get("type", ""),
+        "settings": section.get("settings") or {},
+        "blocks": _clean_theme_blocks(section),
+    }
+
+
+def _parse_homepage_layout_template(template: dict) -> dict:
+    layout = {
+        "hero": {},
+        "occasions": {},
+        "promoBanner": {},
+        "eventsBanner": {},
+    }
+
+    for section_id, section in _ordered_theme_sections(template):
+        if _is_theme_item_disabled(section):
+            continue
+
+        layout_key = HOMEPAGE_SECTION_TYPES.get(_normalize_theme_section_type(section.get("type", "")))
+        if not layout_key or layout[layout_key]:
+            continue
+
+        layout[layout_key] = _clean_theme_section(section_id, section)
+
+    return layout
+
+
+async def _get_theme_file_content(file_node: dict) -> str:
+    body = (file_node or {}).get("body") or {}
+    body_type = body.get("__typename")
+
+    if body_type == "OnlineStoreThemeFileBodyText":
+        return body.get("content", "")
+    if body_type == "OnlineStoreThemeFileBodyBase64":
+        content = body.get("contentBase64", "")
+        return base64.b64decode(content).decode("utf-8") if content else ""
+    if body_type == "OnlineStoreThemeFileBodyUrl":
+        url = body.get("url")
+        if not url:
+            raise HTTPException(status_code=502, detail="Theme file body URL missing")
+        try:
+            async with httpx.AsyncClient(timeout=15) as client_http:
+                response = await client_http.get(url)
+                response.raise_for_status()
+                return response.text
+        except httpx.RequestError as e:
+            logger.error(f"Theme file body URL network error: {e}")
+            raise HTTPException(status_code=503, detail="Theme file body unavailable")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Theme file body URL HTTP error: {e.response.status_code} - {e.response.text}")
+            raise HTTPException(status_code=502, detail="Theme file body fetch failed")
+
+    raise HTTPException(status_code=502, detail="Unsupported theme file body type")
+
+
+async def _get_active_theme_homepage_template() -> dict:
+    query = """
+    query GetActiveThemeHomepageTemplate($filenames: [String!]) {
+      themes(first: 1, roles: [MAIN]) {
+        nodes {
+          files(first: 1, filenames: $filenames) {
+            nodes {
+              filename
+              body {
+                __typename
+                ... on OnlineStoreThemeFileBodyText {
+                  content
+                }
+                ... on OnlineStoreThemeFileBodyBase64 {
+                  contentBase64
+                }
+                ... on OnlineStoreThemeFileBodyUrl {
+                  url
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    data = await shopify_admin_graphql(query, {"filenames": [HOMEPAGE_TEMPLATE_FILE]})
+    themes = data.get("themes", {}).get("nodes", [])
+    if not themes:
+        raise HTTPException(status_code=404, detail="Active Shopify theme not found")
+
+    files = themes[0].get("files", {}).get("nodes", [])
+    if not files:
+        raise HTTPException(status_code=404, detail=f"{HOMEPAGE_TEMPLATE_FILE} not found in active theme")
+
+    content = await _get_theme_file_content(files[0])
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid {HOMEPAGE_TEMPLATE_FILE}: {e}")
+        raise HTTPException(status_code=502, detail="Invalid homepage theme template JSON")
+
 
 # ─── Auth Models ───
 class CartLineInput(BaseModel):
@@ -1398,6 +1566,12 @@ async def get_custom_gift_banner():
 
 
 # ─── Health ───
+@api_router.get("/homepage-layout")
+async def get_homepage_layout():
+    template = await _get_active_theme_homepage_template()
+    return _parse_homepage_layout_template(template)
+
+
 @api_router.get("/admin-test")
 async def admin_test():
     query = """
