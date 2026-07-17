@@ -16,7 +16,9 @@ import logging
 import httpx
 import hmac
 import hashlib
-from urllib.parse import quote
+import html
+import re
+from urllib.parse import quote, unquote
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timezone
@@ -331,6 +333,353 @@ def _parse_homepage_layout_template(template: dict) -> dict:
     return layout
 
 
+def _theme_setting(source: dict, *keys: str) -> str:
+    settings = (source or {}).get("settings") or source or {}
+    for key in keys:
+        value = settings.get(key)
+        if value is not None:
+            return value
+    return ""
+
+
+def _theme_blocks(section: dict) -> list:
+    return (section or {}).get("blocks") or []
+
+
+def _theme_blocks_by_type(section: dict, block_type: str) -> list:
+    return [block for block in _theme_blocks(section) if block.get("type") == block_type]
+
+
+def _merged_theme_source(section: dict) -> dict:
+    settings = dict((section or {}).get("settings") or {})
+    for block in _theme_blocks(section):
+        settings.update(block.get("settings") or {})
+    return {"settings": settings}
+
+
+def _strip_theme_html(value: str) -> str:
+    if not isinstance(value, str) or "<" not in value or ">" not in value:
+        return value or ""
+
+    normalized = re.sub(r"<\s*br\s*/?\s*>", "\n", value, flags=re.IGNORECASE)
+    normalized = re.sub(r"</\s*p\s*>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<[^>]+>", "", normalized)
+    normalized = html.unescape(normalized)
+    lines = [line.strip() for line in normalized.splitlines()]
+    return "\n".join(line for line in lines if line).strip()
+
+
+def _theme_text(source: dict, *keys: str) -> str:
+    return _strip_theme_html(_theme_setting(source, *keys))
+
+
+def _normalize_shopify_resource_link(value: str) -> str:
+    if not isinstance(value, str) or not value:
+        return ""
+    if value.startswith(("https://", "http://")):
+        return value
+    if value == "shopify://collections":
+        return "/collections"
+    if value.startswith("shopify://collections/"):
+        handle = value.replace("shopify://collections/", "", 1).strip("/")
+        return f"/collections/{handle}" if handle else "/collections"
+    if value.startswith("shopify://pages/"):
+        handle = value.replace("shopify://pages/", "", 1).strip("/")
+        return f"/pages/{handle}" if handle else value
+    return value
+
+
+def _normalize_hero(layout: dict) -> list:
+    hero = layout.get("hero") or {}
+    slides = _theme_blocks_by_type(hero, "slider_item") or _theme_blocks(hero) or [hero]
+
+    return [
+        {
+            "desktopImage": _theme_setting(slide, "background"),
+            "mobileImage": _theme_setting(slide, "mb_background"),
+            "subheading": _theme_text(slide, "subheading"),
+            "title": _theme_text(slide, "title"),
+            "description": _theme_text(slide, "description"),
+            "buttonText": _theme_setting(slide, "button_text"),
+            "buttonLink": _normalize_shopify_resource_link(_theme_setting(slide, "button_link")),
+            "secondButtonText": _theme_setting(slide, "second_button_text"),
+            "secondButtonLink": _normalize_shopify_resource_link(_theme_setting(slide, "second_button_link")),
+        }
+        for slide in slides
+        if slide
+    ]
+
+
+def _normalize_occasions(layout: dict) -> list:
+    occasions = layout.get("occasions") or {}
+    items = _theme_blocks_by_type(occasions, "collection_block")
+
+    return [
+        {
+            "collectionHandle": _normalize_shopify_resource_link(_theme_setting(item, "collection")),
+            "title": _theme_text(item, "title"),
+            "image": _theme_setting(item, "item_image"),
+        }
+        for item in items
+        if item
+    ]
+
+
+def _normalize_promo_banner(layout: dict) -> dict:
+    occasions = layout.get("occasions") or {}
+    banner_blocks = [block for block in _theme_blocks(occasions) if block.get("type") != "collection_block"]
+    promo = layout.get("promoBanner") or {}
+    source = banner_blocks[0] if banner_blocks else (_merged_theme_source(promo) if promo else {})
+
+    return {
+        "desktopImage": _theme_setting(source, "background", "desktop_image", "image"),
+        "mobileImage": _theme_setting(source, "mb_background", "mobile_image"),
+        "title": _theme_text(source, "title"),
+        "description": _theme_text(source, "description"),
+        "buttonText": _theme_setting(source, "button_text"),
+        "buttonLink": _normalize_shopify_resource_link(_theme_setting(source, "button_link", "collection")),
+    }
+
+
+def _normalize_events_banner(layout: dict) -> dict:
+    events = layout.get("eventsBanner") or {}
+    source = _merged_theme_source(events) if events else {}
+
+    return {
+        "backgroundImage": _theme_setting(source, "background", "background_image", "image", "desktop_image"),
+        "rightImage": _theme_setting(source, "right_image", "rightImage", "foreground_image", "side_image"),
+        "heading": _theme_text(source, "heading", "title"),
+        "subheading": _theme_text(source, "subheading", "sub_heading", "subtitle", "text"),
+        "buttonText": _theme_setting(source, "button_text", "buttonText", "button_label", "cta_text"),
+        "buttonLink": _normalize_shopify_resource_link(_theme_setting(source, "button_link", "buttonLink", "button_url", "cta_url", "link")),
+    }
+
+
+def _normalize_homepage_layout(layout: dict) -> dict:
+    return {
+        "hero": _normalize_hero(layout),
+        "occasions": _normalize_occasions(layout),
+        "promoBanner": _normalize_promo_banner(layout),
+        "eventsBanner": _normalize_events_banner(layout),
+    }
+
+
+SHOPIFY_ASSET_CACHE_TTL_SECONDS = 600
+_SHOPIFY_ASSET_URL_CACHE = {}
+
+
+def _shopify_asset_cache_now() -> float:
+    return datetime.now(timezone.utc).timestamp()
+
+
+def _is_supported_shopify_asset_reference(value: str) -> bool:
+    return isinstance(value, str) and value.startswith(("shopify://shop_images/", "shopify://files/"))
+
+
+def _shopify_asset_filename(value: str) -> str:
+    if not isinstance(value, str) or not value.startswith("shopify://"):
+        return ""
+
+    filename = value.rsplit("/", 1)[-1]
+    return unquote(filename).strip()
+
+
+def _shopify_file_search_value(filename: str) -> str:
+    return filename.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _file_url_from_admin_node(node: dict) -> str:
+    if not node:
+        return ""
+
+    image = node.get("image")
+    if isinstance(image, dict) and image.get("url"):
+        return image.get("url", "")
+
+    return node.get("url", "") or ""
+
+
+def _file_url_filename(value: str) -> str:
+    if not isinstance(value, str):
+        return ""
+
+    clean_url = value.split("?", 1)[0].split("#", 1)[0]
+    filename = clean_url.rsplit("/", 1)[-1]
+    return unquote(filename).strip()
+
+
+def _get_cached_shopify_asset_reference(value: str):
+    entry = _SHOPIFY_ASSET_URL_CACHE.get(value)
+    if not entry:
+        return None
+
+    if entry.get("expires_at", 0) <= _shopify_asset_cache_now():
+        _SHOPIFY_ASSET_URL_CACHE.pop(value, None)
+        return None
+
+    return entry.get("url", "")
+
+
+def _cache_shopify_asset_reference(value: str, resolved_url: str) -> None:
+    if not _is_supported_shopify_asset_reference(value):
+        return
+
+    _SHOPIFY_ASSET_URL_CACHE[value] = {
+        "url": resolved_url or "",
+        "expires_at": _shopify_asset_cache_now() + SHOPIFY_ASSET_CACHE_TTL_SECONDS,
+    }
+
+
+def _collect_homepage_asset_references(layout: dict) -> set:
+    references = set()
+
+    for slide in layout.get("hero", []):
+        references.update([
+            slide.get("desktopImage", ""),
+            slide.get("mobileImage", ""),
+        ])
+
+    for occasion in layout.get("occasions", []):
+        references.add(occasion.get("image", ""))
+
+    promo = layout.get("promoBanner", {})
+    references.update([
+        promo.get("desktopImage", ""),
+        promo.get("mobileImage", ""),
+    ])
+
+    events = layout.get("eventsBanner", {})
+    references.update([
+        events.get("backgroundImage", ""),
+        events.get("rightImage", ""),
+    ])
+
+    return {
+        reference
+        for reference in references
+        if _is_supported_shopify_asset_reference(reference)
+    }
+
+
+async def _resolve_shopify_asset_references(values: set) -> dict:
+    resolved_assets = {}
+    unresolved_refs = []
+
+    for value in sorted(values):
+        cached_url = _get_cached_shopify_asset_reference(value)
+        if cached_url is None:
+            unresolved_refs.append(value)
+        else:
+            resolved_assets[value] = cached_url
+
+    if not unresolved_refs:
+        return resolved_assets
+
+    filenames_by_ref = {
+        value: _shopify_asset_filename(value)
+        for value in unresolved_refs
+    }
+    filenames = sorted({
+        filename
+        for filename in filenames_by_ref.values()
+        if filename
+    })
+
+    resolved_by_filename = {}
+    if filenames:
+        file_fields = """
+          nodes {
+            ... on MediaImage {
+              image {
+                url
+              }
+            }
+            ... on GenericFile {
+              url
+            }
+          }
+        """
+        query_parts = []
+        aliases_by_filename = {}
+        for index, filename in enumerate(filenames):
+            safe_filename = _shopify_file_search_value(filename)
+            exact_query = f'filename:"{safe_filename}"'
+            exact_alias = f"file{index}Exact"
+            fallback_alias = f"file{index}Fallback"
+            aliases_by_filename[filename] = (exact_alias, fallback_alias)
+            query_parts.extend([
+                f'{exact_alias}: files(first: 1, query: {json.dumps(exact_query)}) {{ {file_fields} }}',
+                f'{fallback_alias}: files(first: 1, query: {json.dumps(safe_filename)}) {{ {file_fields} }}',
+            ])
+
+        query = f"""
+        query ResolveShopifyFiles {{
+          {' '.join(query_parts)}
+        }}
+        """
+
+        try:
+            data = await shopify_admin_graphql(query)
+            for filename, aliases in aliases_by_filename.items():
+                exact_alias, fallback_alias = aliases
+                exact_nodes = data.get(exact_alias, {}).get("nodes", [])
+                fallback_nodes = data.get(fallback_alias, {}).get("nodes", [])
+                resolved_url = (
+                    _file_url_from_admin_node(exact_nodes[0] if exact_nodes else {})
+                    or _file_url_from_admin_node(fallback_nodes[0] if fallback_nodes else {})
+                )
+                if resolved_url:
+                    resolved_by_filename[filename] = resolved_url
+                    resolved_by_filename[filename.lower()] = resolved_url
+        except Exception as e:
+            logger.error(f"Unable to resolve Shopify asset references: {e}")
+
+    for value, filename in filenames_by_ref.items():
+        resolved_url = ""
+        if filename:
+            resolved_url = (
+                resolved_by_filename.get(filename)
+                or resolved_by_filename.get(filename.lower())
+                or ""
+            )
+
+        resolved_assets[value] = resolved_url
+        _cache_shopify_asset_reference(value, resolved_url)
+
+    return resolved_assets
+
+
+def _resolve_shopify_asset_reference(value: str, cache: dict) -> str:
+    if not value:
+        return ""
+    if isinstance(value, str) and value.startswith(("https://", "http://")):
+        return value
+    if not _is_supported_shopify_asset_reference(value):
+        return ""
+    return cache.get(value, "")
+
+
+async def _resolve_homepage_layout_images(layout: dict) -> dict:
+    cache = await _resolve_shopify_asset_references(_collect_homepage_asset_references(layout))
+
+    for slide in layout.get("hero", []):
+        slide["desktopImage"] = _resolve_shopify_asset_reference(slide.get("desktopImage", ""), cache)
+        slide["mobileImage"] = _resolve_shopify_asset_reference(slide.get("mobileImage", ""), cache)
+
+    for occasion in layout.get("occasions", []):
+        occasion["image"] = _resolve_shopify_asset_reference(occasion.get("image", ""), cache)
+
+    promo = layout.get("promoBanner", {})
+    promo["desktopImage"] = _resolve_shopify_asset_reference(promo.get("desktopImage", ""), cache)
+    promo["mobileImage"] = _resolve_shopify_asset_reference(promo.get("mobileImage", ""), cache)
+
+    events = layout.get("eventsBanner", {})
+    events["backgroundImage"] = _resolve_shopify_asset_reference(events.get("backgroundImage", ""), cache)
+    events["rightImage"] = _resolve_shopify_asset_reference(events.get("rightImage", ""), cache)
+
+    return layout
+
+
 async def _get_theme_file_content(file_node: dict) -> str:
     body = (file_node or {}).get("body") or {}
     body_type = body.get("__typename")
@@ -395,6 +744,14 @@ async def _get_active_theme_homepage_template() -> dict:
         raise HTTPException(status_code=404, detail=f"{HOMEPAGE_TEMPLATE_FILE} not found in active theme")
 
     content = await _get_theme_file_content(files[0])
+
+    # Shopify prepends a comment block to generated JSON templates.
+    # Remove it before parsing.
+    comment_end = content.find("*/")
+
+    if comment_end != -1:
+        content = content[comment_end + 2:].lstrip()
+
     try:
         return json.loads(content)
     except json.JSONDecodeError as e:
@@ -1569,7 +1926,9 @@ async def get_custom_gift_banner():
 @api_router.get("/homepage-layout")
 async def get_homepage_layout():
     template = await _get_active_theme_homepage_template()
-    return _parse_homepage_layout_template(template)
+    layout = _parse_homepage_layout_template(template)
+    normalized = _normalize_homepage_layout(layout)
+    return await _resolve_homepage_layout_images(normalized)
 
 
 @api_router.get("/admin-test")
