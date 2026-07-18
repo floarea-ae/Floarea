@@ -389,6 +389,54 @@ def _normalize_shopify_resource_link(value: str) -> str:
     return value
 
 
+def _collection_handle_from_theme_value(value: str) -> str:
+    if not isinstance(value, str) or not value:
+        return ""
+
+    normalized = value.strip()
+    if normalized in ("shopify://collections", "/collections"):
+        return ""
+    if normalized.startswith("shopify://collections/"):
+        normalized = normalized.replace("shopify://collections/", "", 1)
+    elif normalized.startswith("/collections/"):
+        normalized = normalized.replace("/collections/", "", 1)
+    elif normalized.startswith(("https://", "http://")):
+        return ""
+
+    handle = normalized.strip("/").split("?", 1)[0]
+    return "" if handle == "all" else handle
+
+
+async def _get_collection_titles_by_handle(handles: list) -> dict:
+    unique_handles = sorted({handle for handle in handles if handle})
+    if not unique_handles:
+        return {}
+
+    query_parts = []
+    aliases_by_handle = {}
+    for index, handle in enumerate(unique_handles):
+        alias = f"collection{index}"
+        aliases_by_handle[handle] = alias
+        query_parts.append(f"{alias}: collection(handle: {json.dumps(handle)}) {{ title }}")
+
+    query = f"""
+    query GetOccasionCollectionTitles {{
+      {' '.join(query_parts)}
+    }}
+    """
+
+    try:
+        data = await shopify_graphql(query)
+    except Exception as e:
+        logger.error(f"Unable to resolve occasion collection titles: {e}")
+        return {}
+
+    return {
+        handle: (data.get(alias) or {}).get("title", "")
+        for handle, alias in aliases_by_handle.items()
+    }
+
+
 def _normalize_hero(layout: dict) -> list:
     hero = layout.get("hero") or {}
     slides = _theme_blocks_by_type(hero, "slider_item") or _theme_blocks(hero) or [hero]
@@ -410,14 +458,19 @@ def _normalize_hero(layout: dict) -> list:
     ]
 
 
-def _normalize_occasions(layout: dict) -> list:
+async def _normalize_occasions(layout: dict) -> list:
     occasions = layout.get("occasions") or {}
     items = _theme_blocks_by_type(occasions, "collection_block")
+    collection_handles = [
+        _collection_handle_from_theme_value(_theme_setting(item, "collection"))
+        for item in items
+    ]
+    collection_titles = await _get_collection_titles_by_handle(collection_handles)
 
     return [
         {
             "collectionHandle": _normalize_shopify_resource_link(_theme_setting(item, "collection")),
-            "title": _theme_text(item, "title"),
+            "title": _theme_text(item, "title") or collection_titles.get(_collection_handle_from_theme_value(_theme_setting(item, "collection")), ""),
             "image": _theme_setting(item, "item_image"),
         }
         for item in items
@@ -436,8 +489,8 @@ def _normalize_promo_banner(layout: dict) -> dict:
         "mobileImage": _theme_setting(source, "mb_background", "mobile_image"),
         "title": _theme_text(source, "title"),
         "description": _theme_text(source, "description"),
-        "buttonText": _theme_setting(source, "button_text"),
-        "buttonLink": _normalize_shopify_resource_link(_theme_setting(source, "button_link", "collection")),
+        "buttonText": _theme_setting(source, "button_label", "button_text"),
+        "buttonLink": _normalize_shopify_resource_link(_theme_setting(source, "link", "button_link", "collection")),
     }
 
 
@@ -455,10 +508,10 @@ def _normalize_events_banner(layout: dict) -> dict:
     }
 
 
-def _normalize_homepage_layout(layout: dict) -> dict:
+async def _normalize_homepage_layout(layout: dict) -> dict:
     return {
         "hero": _normalize_hero(layout),
-        "occasions": _normalize_occasions(layout),
+        "occasions": await _normalize_occasions(layout),
         "promoBanner": _normalize_promo_banner(layout),
         "eventsBanner": _normalize_events_banner(layout),
     }
@@ -1927,7 +1980,7 @@ async def get_custom_gift_banner():
 async def get_homepage_layout():
     template = await _get_active_theme_homepage_template()
     layout = _parse_homepage_layout_template(template)
-    normalized = _normalize_homepage_layout(layout)
+    normalized = await _normalize_homepage_layout(layout)
     return await _resolve_homepage_layout_images(normalized)
 
 
