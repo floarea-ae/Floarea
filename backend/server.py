@@ -239,9 +239,12 @@ HOMEPAGE_TEMPLATE_FILE = "templates/index.json"
 HOMEPAGE_SECTION_TYPES = {
     "slider": "hero",
     "collection-list": "occasions",
-    "custom-content": "promoBanner",
     "blurred-section": "eventsBanner",
+    "featured-collection": "featuredCollection",
+    "icon-box": "flowerServices",
+    "rich-text": "instagramHeader",
 }
+HOMEPAGE_CUSTOM_CONTENT_KEYS = ["promoBanner", "customGiftBanner", "instagramGallery"]
 
 
 def _normalize_theme_section_type(section_type: str) -> str:
@@ -318,13 +321,22 @@ def _parse_homepage_layout_template(template: dict) -> dict:
         "occasions": {},
         "promoBanner": {},
         "eventsBanner": {},
+        "featuredCollection": {},
+        "flowerServices": {},
+        "customGiftBanner": {},
+        "instagramHeader": {},
+        "instagramGallery": {},
     }
 
     for section_id, section in _ordered_theme_sections(template):
         if _is_theme_item_disabled(section):
             continue
 
-        layout_key = HOMEPAGE_SECTION_TYPES.get(_normalize_theme_section_type(section.get("type", "")))
+        section_type = _normalize_theme_section_type(section.get("type", ""))
+        if section_type == "custom-content":
+            layout_key = next((key for key in HOMEPAGE_CUSTOM_CONTENT_KEYS if not layout[key]), None)
+        else:
+            layout_key = HOMEPAGE_SECTION_TYPES.get(section_type)
         if not layout_key or layout[layout_key]:
             continue
 
@@ -342,6 +354,30 @@ def _theme_setting(source: dict, *keys: str) -> str:
     return ""
 
 
+def _theme_non_empty_setting(source: dict, *keys: str) -> str:
+    for key in keys:
+        value = _theme_setting(source, key)
+        if value:
+            return value
+    return ""
+
+
+def _theme_int(source: dict, key: str, default: int = 0) -> int:
+    try:
+        return int(_theme_setting(source, key))
+    except (TypeError, ValueError):
+        return default
+
+
+def _theme_bool(source: dict, key: str) -> bool:
+    value = _theme_setting(source, key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() == "true"
+    return bool(value)
+
+
 def _theme_blocks(section: dict) -> list:
     return (section or {}).get("blocks") or []
 
@@ -355,6 +391,16 @@ def _merged_theme_source(section: dict) -> dict:
     for block in _theme_blocks(section):
         settings.update(block.get("settings") or {})
     return {"settings": settings}
+
+
+def _first_theme_block(section: dict, *block_types: str) -> dict:
+    blocks = _theme_blocks(section)
+    if not block_types:
+        return blocks[0] if blocks else {}
+    for block in blocks:
+        if block.get("type") in block_types:
+            return block
+    return {}
 
 
 def _strip_theme_html(value: str) -> str:
@@ -508,12 +554,122 @@ def _normalize_events_banner(layout: dict) -> dict:
     }
 
 
+async def _get_featured_collection_products(collection_handle: str, first: int) -> list:
+    if not collection_handle or first <= 0:
+        return []
+
+    query = """
+    query GetHomepageFeaturedCollection($handle: String!, $first: Int!) {
+      collection(handle: $handle) {
+        products(first: $first) {
+          edges {
+            node {
+              id handle title description availableForSale tags
+              priceRange { minVariantPrice { amount currencyCode } }
+              images(first: 5) { edges { node { url altText } } }
+              variants(first: 5) { edges { node { id title priceV2: price { amount currencyCode } availableForSale } } }
+              collections(first: 3) { edges { node { handle title } } }
+            }
+          }
+        }
+      }
+    }
+    """
+
+    try:
+        data = await shopify_graphql(query, {"handle": collection_handle, "first": first})
+        collection = data.get("collection") or {}
+        return [
+            transform_product(edge["node"])
+            for edge in collection.get("products", {}).get("edges", [])
+        ]
+    except Exception as e:
+        logger.error(f"Unable to resolve featured collection products for {collection_handle}: {e}")
+        return []
+
+
+async def _normalize_featured_collection(layout: dict) -> dict:
+    featured = layout.get("featuredCollection") or {}
+    collection = _theme_setting(featured, "collection")
+    products_to_show = _theme_int(featured, "product_to_show", 0)
+
+    return {
+        "heading": _theme_text(featured, "heading"),
+        "collection": collection,
+        "productsToShow": products_to_show,
+        "itemsPerRow": _theme_int(featured, "items_per_row", 0),
+        "buttonText": _theme_setting(featured, "button_text"),
+        "showButtonOnHeader": _theme_bool(featured, "show_button_on_header"),
+        "products": await _get_featured_collection_products(collection, products_to_show),
+    }
+
+
+def _normalize_flower_services(layout: dict) -> dict:
+    services = layout.get("flowerServices") or {}
+
+    return {
+        "heading": _theme_text(services, "heading"),
+        "description": _theme_text(services, "description"),
+        "cards": [
+            {
+                "image": _theme_non_empty_setting(card, "image_by_url", "image"),
+                "title": _theme_text(card, "title"),
+                "description": _theme_text(card, "description"),
+                "link": _normalize_shopify_resource_link(_theme_setting(card, "link")),
+                "buttonText": _theme_setting(card, "button_label"),
+                "buttonLink": _normalize_shopify_resource_link(_theme_setting(card, "button_link")),
+            }
+            for card in _theme_blocks(services)
+            if card
+        ],
+    }
+
+
+def _normalize_custom_gift_banner(layout: dict) -> dict:
+    gift = layout.get("customGiftBanner") or {}
+    source = _first_theme_block(gift, "image_card") or _merged_theme_source(gift)
+
+    return {
+        "desktopImage": _theme_setting(source, "image", "desktop_image", "background"),
+        "mobileImage": _theme_setting(source, "mobile_image", "mb_background"),
+        "title": _theme_text(source, "title"),
+        "description": _theme_text(source, "description"),
+        "buttonText": _theme_setting(source, "button_label", "button_text"),
+        "buttonLink": _normalize_shopify_resource_link(_theme_setting(source, "link", "button_link", "collection")),
+    }
+
+
+def _normalize_instagram_header(layout: dict) -> dict:
+    header = layout.get("instagramHeader") or {}
+    heading_block = _first_theme_block(header, "heading")
+    text_block = _first_theme_block(header, "text")
+
+    return {
+        "heading": _theme_text(heading_block or header, "heading"),
+        "text": _theme_text(text_block or header, "text", "description"),
+    }
+
+
+def _normalize_instagram_gallery(layout: dict) -> list:
+    gallery = layout.get("instagramGallery") or {}
+    return [
+        _theme_non_empty_setting(block, "image_by_url", "image")
+        for block in _theme_blocks(gallery)
+        if _theme_non_empty_setting(block, "image_by_url", "image")
+    ]
+
+
 async def _normalize_homepage_layout(layout: dict) -> dict:
     return {
         "hero": _normalize_hero(layout),
         "occasions": await _normalize_occasions(layout),
         "promoBanner": _normalize_promo_banner(layout),
         "eventsBanner": _normalize_events_banner(layout),
+        "featuredCollection": await _normalize_featured_collection(layout),
+        "flowerServices": _normalize_flower_services(layout),
+        "customGiftBanner": _normalize_custom_gift_banner(layout),
+        "instagramHeader": _normalize_instagram_header(layout),
+        "instagramGallery": _normalize_instagram_gallery(layout),
     }
 
 
@@ -606,6 +762,18 @@ def _collect_homepage_asset_references(layout: dict) -> set:
         events.get("backgroundImage", ""),
         events.get("rightImage", ""),
     ])
+
+    services = layout.get("flowerServices", {})
+    for card in services.get("cards", []):
+        references.add(card.get("image", ""))
+
+    gift = layout.get("customGiftBanner", {})
+    references.update([
+        gift.get("desktopImage", ""),
+        gift.get("mobileImage", ""),
+    ])
+
+    references.update(layout.get("instagramGallery", []))
 
     return {
         reference
@@ -729,6 +897,19 @@ async def _resolve_homepage_layout_images(layout: dict) -> dict:
     events = layout.get("eventsBanner", {})
     events["backgroundImage"] = _resolve_shopify_asset_reference(events.get("backgroundImage", ""), cache)
     events["rightImage"] = _resolve_shopify_asset_reference(events.get("rightImage", ""), cache)
+
+    services = layout.get("flowerServices", {})
+    for card in services.get("cards", []):
+        card["image"] = _resolve_shopify_asset_reference(card.get("image", ""), cache)
+
+    gift = layout.get("customGiftBanner", {})
+    gift["desktopImage"] = _resolve_shopify_asset_reference(gift.get("desktopImage", ""), cache)
+    gift["mobileImage"] = _resolve_shopify_asset_reference(gift.get("mobileImage", ""), cache)
+
+    layout["instagramGallery"] = [
+        _resolve_shopify_asset_reference(image, cache)
+        for image in layout.get("instagramGallery", [])
+    ]
 
     return layout
 
