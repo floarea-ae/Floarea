@@ -37,13 +37,31 @@ const SLIDES = [
   },
 ];
 
-export default function HeroSlider() {
+type HeroSlide = {
+  id: string;
+  image: string;
+  url: string;
+  overline: string;
+  title: string;
+  cta: string;
+  alignment?: string;
+};
+
+type HeroSliderProps = {
+  slides?: HeroSlide[];
+};
+
+export default function HeroSlider({ slides: providedSlides }: HeroSliderProps) {
   const router = useRouter();
+  const hasProvidedSlides = providedSlides !== undefined;
   const [slides, setSlides] = useState(SLIDES);
+  const displaySlides = hasProvidedSlides ? providedSlides : slides;
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
+    if (hasProvidedSlides) return;
+
     api.get('/hero-slides')
       .then((cmsSlides) => {
         if (!Array.isArray(cmsSlides) || cmsSlides.length === 0) {
@@ -67,14 +85,14 @@ export default function HeroSlider() {
       .catch(() => {
         setSlides(SLIDES);
       });
-  }, []);
+  }, [hasProvidedSlides]);
 
   // Auto-scroll logic
   useEffect(() => {
-    if (slides.length === 0) return;
+    if (displaySlides.length === 0) return;
     const interval = setInterval(() => {
       let nextIndex = activeIndex + 1;
-      if (nextIndex >= slides.length) {
+      if (nextIndex >= displaySlides.length) {
         nextIndex = 0;
       }
       flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
@@ -82,7 +100,7 @@ export default function HeroSlider() {
     }, 4000); // 4 seconds per slide
 
     return () => clearInterval(interval);
-  }, [activeIndex, slides.length]);
+  }, [activeIndex, displaySlides.length]);
 
   const handleScroll = (event: any) => {
     const slideSize = event.nativeEvent.layoutMeasurement.width;
@@ -97,7 +115,7 @@ export default function HeroSlider() {
     <View style={styles.container}>
       <FlatList
         ref={flatListRef}
-        data={slides}
+        data={displaySlides}
         keyExtractor={(item) => item.id}
         horizontal
         pagingEnabled
@@ -133,7 +151,7 @@ export default function HeroSlider() {
 
       {/* Pagination Dots */}
       <View style={styles.pagination}>
-        {slides.map((_, index) => (
+        {displaySlides.map((_, index) => (
           <View
             key={`dot-${index}`}
             style={[

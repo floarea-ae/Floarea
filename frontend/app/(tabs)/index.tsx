@@ -13,10 +13,8 @@ import PromoBanner from '../../src/components/PromoBanner';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [collections, setCollections] = useState<any[]>([]);
+  const [homepageLayout, setHomepageLayout] = useState<any>(null);
   const [products, setProducts] = useState<any[]>([]);
-  const [promoBanner, setPromoBanner] = useState<any>(null);
-  const [eventsBanner, setEventsBanner] = useState<any>(null);
   const [customGiftBanner, setCustomGiftBanner] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -24,21 +22,18 @@ export default function HomeScreen() {
 
   async function loadData() {
     try {
-      const [colData, prodData, promoData, eventsData, giftData] = await Promise.all([
-        api.get('/collections?featured_only=true'),
+      const [homepageData, prodData, giftData] = await Promise.all([
+        api.get('/homepage-layout').catch((e) => {
+          console.error('Homepage layout error:', e);
+          return null;
+        }),
         api.get('/products?first=8'),
-        api.get('/promo-banner').catch(() => null),
-        api.get('/events-banner').catch(() => null),
         api.get('/custom-gift-banner').catch(() => null),
       ]);
-      setCollections(colData.collections || []);
+      if (homepageData && Object.keys(homepageData).length > 0) {
+        setHomepageLayout(homepageData);
+      }
       setProducts(prodData.products || []);
-      if (promoData && Object.keys(promoData).length > 0) {
-        setPromoBanner(promoData);
-      }
-      if (eventsData && Object.keys(eventsData).length > 0) {
-        setEventsBanner(eventsData);
-      }
       if (giftData && Object.keys(giftData).length > 0) {
         setCustomGiftBanner(giftData);
       }
@@ -46,6 +41,33 @@ export default function HomeScreen() {
       console.error('Load error:', e);
     } finally {
       setLoading(false);
+    }
+  }
+
+  function getCollectionHandle(value: string) {
+    if (!value) return '';
+    if (value === '/collections' || value === '/collections/all') return '';
+    if (value.startsWith('/collections/')) return value.replace('/collections/', '').split('?')[0];
+    return value;
+  }
+
+  function navigateToBackendLink(link?: string) {
+    if (!link) return;
+    if (link === '/collections' || link === '/collections/all') {
+      router.push('/shop');
+      return;
+    }
+    if (link.startsWith('/collections/')) {
+      const collection = getCollectionHandle(link);
+      router.push(collection ? { pathname: '/shop', params: { collection } } : '/shop');
+      return;
+    }
+    if (link === '/pages/events') {
+      router.push('/events');
+      return;
+    }
+    if (link.startsWith('/shop') || link.startsWith('/events')) {
+      router.push(link as any);
     }
   }
 
@@ -78,19 +100,37 @@ export default function HomeScreen() {
         </View>
 
         {/* Hero Slider */}
-        <HeroSlider />
+        <HeroSlider
+          slides={homepageLayout?.hero?.map((slide: any, index: number) => ({
+            id: slide.buttonLink || slide.title || `homepage-slide-${index}`,
+            image: slide.mobileImage || slide.desktopImage || '',
+            url: slide.buttonLink?.startsWith('/collections/')
+              ? `/shop?collection=${getCollectionHandle(slide.buttonLink)}`
+              : slide.buttonLink === '/collections' || slide.buttonLink === '/collections/all'
+                ? '/shop'
+                : slide.buttonLink === '/pages/events'
+                  ? '/events'
+                  : slide.buttonLink || '/shop',
+            overline: slide.subheading || '',
+            title: slide.title || '',
+            cta: slide.buttonText || 'SHOP NOW',
+          }))}
+        />
 
         {/* Occasions */}
-        {collections.length > 0 && (
+        {homepageLayout?.occasions?.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Perfect Gift For Every Occasion</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catScroll}>
-              {collections.map((cat) => (
+              {homepageLayout.occasions.map((cat: any) => (
                 <TouchableOpacity
-                  testID={`category-${cat.handle}`}
-                  key={cat.handle}
+                  testID={`category-${getCollectionHandle(cat.collectionHandle)}`}
+                  key={cat.collectionHandle || cat.title}
                   style={styles.catCard}
-                  onPress={() => router.push({ pathname: '/shop', params: { collection: cat.handle } })}
+                  onPress={() => {
+                    const collection = getCollectionHandle(cat.collectionHandle);
+                    router.push(collection ? { pathname: '/shop', params: { collection } } : '/shop');
+                  }}
                   activeOpacity={0.8}
                 >
                   {cat.image ? (
@@ -109,11 +149,11 @@ export default function HomeScreen() {
 
         {/* Promo Banner */}
         <PromoBanner
-          title={promoBanner?.title || 'Preserved to\nLast Forever'}
-          subtitle={promoBanner?.overline || 'FOREVER ROSES'}
-          ctaText={promoBanner?.cta_text || 'EXPLORE'}
-          image={promoBanner?.mobile_image || promoBanner?.desktop_image || products[2]?.image || ''}
-          onPress={() => router.push((promoBanner?.cta_url || '/shop?collection=forever-special-occasion-roses') as any)}
+          title={homepageLayout?.promoBanner?.title || 'Preserved to\nLast Forever'}
+          subtitle={homepageLayout?.promoBanner?.description || 'FOREVER ROSES'}
+          ctaText={homepageLayout?.promoBanner?.buttonText || 'EXPLORE'}
+          image={homepageLayout?.promoBanner?.mobileImage || homepageLayout?.promoBanner?.desktopImage || products[2]?.image || ''}
+          onPress={() => navigateToBackendLink(homepageLayout?.promoBanner?.buttonLink || '/shop?collection=forever-special-occasion-roses')}
         />
 
 
@@ -135,11 +175,11 @@ export default function HomeScreen() {
 
         {/* Events Banner */}
         <PromoBanner
-          title={eventsBanner?.title || 'Floarea Events'}
-          subtitle={eventsBanner?.subtitle || 'Bespoke Floral Design'}
-          ctaText={eventsBanner?.cta_text || 'INQUIRE NOW'}
-          image={eventsBanner?.mobile_image || eventsBanner?.desktop_image || 'https://floarea.ae/cdn/shop/files/floarea_mobile_banner_v2.png'}
-          onPress={() => router.push('/events')}
+          title={homepageLayout?.eventsBanner?.heading || 'Floarea Events'}
+          subtitle={homepageLayout?.eventsBanner?.subheading || 'Bespoke Floral Design'}
+          ctaText={homepageLayout?.eventsBanner?.buttonText || 'INQUIRE NOW'}
+          image={homepageLayout?.eventsBanner?.backgroundImage || 'https://floarea.ae/cdn/shop/files/floarea_mobile_banner_v2.png'}
+          onPress={() => navigateToBackendLink(homepageLayout?.eventsBanner?.buttonLink || '/pages/events')}
         />
 
         {/* Services */}
