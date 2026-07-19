@@ -167,15 +167,15 @@ export default function HeroSlider({ slides: providedSlides }: HeroSliderProps) 
 
 const styles = StyleSheet.create({
   container: {
-    height: 480, // slightly taller for mobile banners
-    borderRadius: 4,
+    height: 500,
+    borderRadius: 6,
     marginHorizontal: 16,
     overflow: 'hidden',
     backgroundColor: COLORS.surface,
   },
   slideContainer: {
-    width: width - 32, // screen width minus margins (16 on each side)
-    height: 480,
+    width: width - 32,
+    height: 500,
   },
   image: {
     width: '100%',
@@ -183,30 +183,31 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.28)',
     justifyContent: 'flex-end',
-    padding: 24,
-    paddingBottom: 48, // leave space for pagination dots
+    alignItems: 'center',
+    paddingHorizontal: 28,
+    paddingBottom: 58,
   },
-  heroOverline: { fontFamily: FONTS.bodySemiBold, fontSize: 11, color: 'rgba(255,255,255,0.8)', letterSpacing: 3 },
-  heroTitle: { fontFamily: FONTS.headingLight, fontSize: 36, color: COLORS.white, marginTop: 8, lineHeight: 42 },
-  heroBtn: { backgroundColor: COLORS.white, paddingHorizontal: 24, paddingVertical: 14, alignSelf: 'flex-start', marginTop: 20 },
+  heroOverline: { fontFamily: FONTS.bodySemiBold, fontSize: 11, color: 'rgba(255,255,255,0.86)', letterSpacing: 3, textAlign: 'center', textTransform: 'uppercase' },
+  heroTitle: { fontFamily: FONTS.headingLight, fontSize: 38, color: COLORS.white, marginTop: 10, lineHeight: 43, textAlign: 'center' },
+  heroBtn: { backgroundColor: COLORS.white, paddingHorizontal: 26, paddingVertical: 14, alignSelf: 'center', marginTop: 22 },
   heroBtnText: { fontFamily: FONTS.bodySemiBold, fontSize: 12, color: COLORS.primary, letterSpacing: 3 },
   pagination: {
     position: 'absolute',
-    bottom: 16,
+    bottom: 20,
     flexDirection: 'row',
     alignSelf: 'center',
-    gap: 8,
+    gap: 7,
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   activeDot: {
     backgroundColor: COLORS.white,
-    width: 20,
+    width: 22,
   },
   inactiveDot: {
     backgroundColor: 'rgba(255, 255, 255, 0.5)',

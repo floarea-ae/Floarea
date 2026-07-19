@@ -87,27 +87,27 @@ export default function ProductCard({ product }: ProductCardProps) {
 }
 
 const styles = StyleSheet.create({
-  card: { width: CARD_WIDTH, marginBottom: 20 },
+  card: { width: CARD_WIDTH, marginBottom: 24 },
   imageWrapper: {
     width: '100%', aspectRatio: 4 / 5, backgroundColor: COLORS.surface,
-    borderRadius: 2, overflow: 'hidden',
+    borderRadius: 6, overflow: 'hidden',
   },
   image: { width: '100%', height: '100%' },
   heartBtn: {
-    position: 'absolute', top: 10, right: 10, width: 36, height: 36,
-    borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.9)',
+    position: 'absolute', top: 10, right: 10, width: 40, height: 40,
+    borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.94)',
     justifyContent: 'center', alignItems: 'center',
   },
-  info: { paddingTop: 10 },
+  info: { paddingTop: 12 },
   category: {
     fontFamily: FONTS.bodySemiBold, fontSize: 9, color: COLORS.primary,
     letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4,
   },
-  name: { fontFamily: FONTS.heading, fontSize: 16, color: COLORS.text, lineHeight: 20, marginBottom: 6 },
+  name: { fontFamily: FONTS.heading, fontSize: 17, color: COLORS.text, lineHeight: 21, marginBottom: 8 },
   priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   price: { fontFamily: FONTS.bodyMedium, fontSize: 14, color: COLORS.text },
   addBtn: {
-    width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.primary,
+    width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.primary,
     justifyContent: 'center', alignItems: 'center',
   },
 });

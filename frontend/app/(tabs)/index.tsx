@@ -12,7 +12,8 @@ import HeroSlider from '../../src/components/HeroSlider';
 import PromoBanner from '../../src/components/PromoBanner';
 
 const { width } = Dimensions.get('window');
-const INSTAGRAM_IMAGE_SIZE = (width - 40) / 2;
+const OCCASION_CARD_WIDTH = (width - 44) / 2;
+const INSTAGRAM_IMAGE_SIZE = (width - 44) / 2;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -93,10 +94,10 @@ export default function HomeScreen() {
             contentFit="contain" 
           />
           <View style={styles.headerActions}>
-            <TouchableOpacity testID="wishlist-header-btn" onPress={() => router.push('/(tabs)/wishlist')}>
+            <TouchableOpacity testID="wishlist-header-btn" style={styles.headerIconBtn} onPress={() => router.push('/(tabs)/wishlist')}>
               <Ionicons name="heart-outline" size={24} color={COLORS.text} />
             </TouchableOpacity>
-            <TouchableOpacity testID="search-btn" onPress={() => router.push('/shop')}>
+            <TouchableOpacity testID="search-btn" style={styles.headerIconBtn} onPress={() => router.push('/shop')}>
               <Ionicons name="search-outline" size={24} color={COLORS.text} />
             </TouchableOpacity>
           </View>
@@ -124,11 +125,11 @@ export default function HomeScreen() {
         {homepageLayout?.occasions?.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Perfect Gift For Every Occasion</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catScroll}>
-              {homepageLayout.occasions.map((cat: any) => (
+            <View style={styles.occasionGrid}>
+              {homepageLayout.occasions.map((cat: any, index: number) => (
                 <TouchableOpacity
                   testID={`category-${getCollectionHandle(cat.collectionHandle)}`}
-                  key={cat.collectionHandle || cat.title}
+                  key={`${cat.collectionHandle || cat.title || 'occasion'}-${index}`}
                   style={styles.catCard}
                   onPress={() => {
                     const collection = getCollectionHandle(cat.collectionHandle);
@@ -137,16 +138,18 @@ export default function HomeScreen() {
                   activeOpacity={0.8}
                 >
                   {cat.image ? (
-                    <Image source={{ uri: cat.image }} style={styles.catImage} contentFit="cover" />
+                    <View style={styles.catImageFrame}>
+                      <Image source={{ uri: cat.image }} style={styles.catImage} contentFit="contain" />
+                    </View>
                   ) : (
-                    <View style={[styles.catImage, { backgroundColor: COLORS.primary }]} />
+                    <View style={styles.catImageFrame}>
+                      <Ionicons name="flower-outline" size={44} color={COLORS.primary} />
+                    </View>
                   )}
-                  <View style={styles.catOverlay}>
-                    <Text style={styles.catName}>{cat.title}</Text>
-                  </View>
+                  <Text style={styles.catName} numberOfLines={2}>{cat.title}</Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
+            </View>
           </View>
         )}
 
@@ -186,21 +189,31 @@ export default function HomeScreen() {
         />
 
         {/* Services */}
-        <View style={styles.servicesRow}>
-          {serviceCards.map((svc: any, i: number) => (
-            <View key={i} style={styles.serviceItem}>
-              <View style={styles.serviceIcon}>
-                {svc.image ? (
-                  <Image source={{ uri: svc.image }} style={styles.serviceImage} contentFit="contain" />
-                ) : (
-                  <Ionicons name="flower-outline" size={22} color={COLORS.primary} />
-                )}
-              </View>
-              <Text style={styles.serviceTitle}>{svc.title}</Text>
-              <Text style={styles.serviceSub}>{svc.description}</Text>
+        {serviceCards.length > 0 && (
+          <View style={styles.section}>
+            {homepageLayout?.flowerServices?.heading ? (
+              <Text style={styles.sectionTitle}>{homepageLayout.flowerServices.heading}</Text>
+            ) : null}
+            {homepageLayout?.flowerServices?.description ? (
+              <Text style={styles.sectionIntro}>{homepageLayout.flowerServices.description}</Text>
+            ) : null}
+            <View style={styles.servicesRow}>
+              {serviceCards.map((svc: any, i: number) => (
+                <View key={`${svc.title || 'service'}-${i}`} style={styles.serviceItem}>
+                  <View style={styles.serviceIcon}>
+                    {svc.image ? (
+                      <Image source={{ uri: svc.image }} style={styles.serviceImage} contentFit="contain" />
+                    ) : (
+                      <Ionicons name="flower-outline" size={26} color={COLORS.primary} />
+                    )}
+                  </View>
+                  <Text style={styles.serviceTitle}>{svc.title}</Text>
+                  <Text style={styles.serviceSub}>{svc.description}</Text>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
+          </View>
+        )}
 
         {/* Custom Gift Banner */}
         <PromoBanner
@@ -213,7 +226,7 @@ export default function HomeScreen() {
 
         {/* Instagram */}
         {(instagramHeader?.heading || instagramHeader?.text) && (
-          <View style={styles.section}>
+          <View style={styles.instagramSection}>
             {instagramHeader?.heading ? <Text style={styles.sectionTitle}>{instagramHeader.heading}</Text> : null}
             {instagramHeader?.text ? <Text style={styles.instagramText}>{instagramHeader.text}</Text> : null}
           </View>
@@ -247,25 +260,27 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 18 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 18 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerIconBtn: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   logoImage: { width: 160, height: 40 },
-  section: { paddingHorizontal: 16, marginTop: 36 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  sectionTitle: { fontFamily: FONTS.headingLight, fontSize: 28, color: COLORS.text },
+  section: { paddingHorizontal: 16, marginTop: 44 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 18, gap: 16 },
+  sectionTitle: { fontFamily: FONTS.headingLight, fontSize: 27, color: COLORS.text, lineHeight: 32, textAlign: 'center' },
+  sectionIntro: { fontFamily: FONTS.body, fontSize: 13, color: COLORS.textMuted, textAlign: 'center', lineHeight: 20, marginTop: 8, marginBottom: 20 },
   viewAll: { fontFamily: FONTS.bodySemiBold, fontSize: 12, color: COLORS.primary, letterSpacing: 1, textTransform: 'uppercase' },
-  catScroll: { paddingRight: 16 },
-  catCard: { width: 160, height: 200, marginRight: 12, borderRadius: 2, overflow: 'hidden' },
+  occasionGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12, marginTop: 18 },
+  catCard: { width: OCCASION_CARD_WIDTH, minHeight: 142, backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 6, alignItems: 'center', justifyContent: 'center', padding: 14 },
+  catImageFrame: { width: '100%', height: 84, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   catImage: { width: '100%', height: '100%' },
-  catOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end', padding: 14 },
-  catName: { fontFamily: FONTS.heading, fontSize: 16, color: COLORS.white },
-  servicesRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: 32 },
-  serviceItem: { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
-  serviceIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
-  serviceImage: { width: 30, height: 30 },
-  serviceTitle: { fontFamily: FONTS.bodyMedium, fontSize: 12, color: COLORS.text, textAlign: 'center' },
-  serviceSub: { fontFamily: FONTS.body, fontSize: 10, color: COLORS.textMuted, textAlign: 'center', marginTop: 2 },
-  productGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  catName: { fontFamily: FONTS.heading, fontSize: 16, lineHeight: 20, color: COLORS.text, textAlign: 'center' },
+  servicesRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
+  serviceItem: { flex: 1, alignItems: 'center', paddingHorizontal: 5 },
+  serviceIcon: { width: 58, height: 58, borderRadius: 29, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  serviceImage: { width: 36, height: 36 },
+  serviceTitle: { fontFamily: FONTS.bodySemiBold, fontSize: 12, color: COLORS.text, textAlign: 'center', lineHeight: 16 },
+  serviceSub: { fontFamily: FONTS.body, fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 5, lineHeight: 15 },
+  productGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 4 },
   promoBanner: { height: 320, marginHorizontal: 16, marginTop: 36, borderRadius: 4, overflow: 'hidden' },
   promoImage: { width: '100%', height: '100%' },
   promoOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(26,46,32,0.5)', justifyContent: 'flex-end', padding: 24 },
@@ -273,11 +288,12 @@ const styles = StyleSheet.create({
   promoTitle: { fontFamily: FONTS.headingLight, fontSize: 30, color: COLORS.white, marginTop: 8, lineHeight: 36 },
   promoBtn: { borderWidth: 1, borderColor: COLORS.white, paddingHorizontal: 20, paddingVertical: 12, alignSelf: 'flex-start', marginTop: 16 },
   promoBtnText: { fontFamily: FONTS.bodySemiBold, fontSize: 11, color: COLORS.white, letterSpacing: 3 },
-  instagramText: { fontFamily: FONTS.body, fontSize: 14, color: COLORS.textMuted, marginTop: 8, lineHeight: 20 },
-  instagramGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 16, gap: 8 },
-  instagramImage: { width: INSTAGRAM_IMAGE_SIZE, height: INSTAGRAM_IMAGE_SIZE, borderRadius: 2 },
-  footer: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20, marginTop: 24 },
+  instagramSection: { paddingHorizontal: 24, marginTop: 44, alignItems: 'center' },
+  instagramText: { fontFamily: FONTS.body, fontSize: 14, color: COLORS.textMuted, marginTop: 8, lineHeight: 21, textAlign: 'center' },
+  instagramGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 18, gap: 12 },
+  instagramImage: { width: INSTAGRAM_IMAGE_SIZE, height: INSTAGRAM_IMAGE_SIZE, borderRadius: 6 },
+  footer: { alignItems: 'center', paddingVertical: 46, paddingHorizontal: 24, marginTop: 28, borderTopWidth: 1, borderTopColor: COLORS.border },
   footerBrand: { fontFamily: FONTS.headingSemiBold, fontSize: 20, color: COLORS.primary, letterSpacing: 6 },
-  footerTagline: { fontFamily: FONTS.headingLight, fontSize: 18, color: COLORS.text, textAlign: 'center', marginTop: 12, lineHeight: 24 },
-  footerInfo: { fontFamily: FONTS.body, fontSize: 12, color: COLORS.textMuted, marginTop: 6 },
+  footerTagline: { fontFamily: FONTS.headingLight, fontSize: 20, color: COLORS.text, textAlign: 'center', marginTop: 14, lineHeight: 26 },
+  footerInfo: { fontFamily: FONTS.body, fontSize: 12, color: COLORS.textMuted, marginTop: 7, textAlign: 'center' },
 });
