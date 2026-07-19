@@ -708,6 +708,18 @@ def _file_url_from_admin_node(node: dict) -> str:
     return node.get("url", "") or ""
 
 
+def _file_url_matches_filename(url: str, filename: str) -> bool:
+    return bool(url and filename and _file_url_filename(url).lower() == filename.lower())
+
+
+def _matching_file_url_from_admin_nodes(nodes: list, filename: str) -> str:
+    for node in nodes:
+        resolved_url = _file_url_from_admin_node(node)
+        if _file_url_matches_filename(resolved_url, filename):
+            return resolved_url
+    return ""
+
+
 def _file_url_filename(value: str) -> str:
     if not isinstance(value, str):
         return ""
@@ -829,8 +841,8 @@ async def _resolve_shopify_asset_references(values: set) -> dict:
             fallback_alias = f"file{index}Fallback"
             aliases_by_filename[filename] = (exact_alias, fallback_alias)
             query_parts.extend([
-                f'{exact_alias}: files(first: 1, query: {json.dumps(exact_query)}) {{ {file_fields} }}',
-                f'{fallback_alias}: files(first: 1, query: {json.dumps(safe_filename)}) {{ {file_fields} }}',
+                f'{exact_alias}: files(first: 10, query: {json.dumps(exact_query)}) {{ {file_fields} }}',
+                f'{fallback_alias}: files(first: 10, query: {json.dumps(safe_filename)}) {{ {file_fields} }}',
             ])
 
         query = f"""
@@ -846,7 +858,9 @@ async def _resolve_shopify_asset_references(values: set) -> dict:
                 exact_nodes = data.get(exact_alias, {}).get("nodes", [])
                 fallback_nodes = data.get(fallback_alias, {}).get("nodes", [])
                 resolved_url = (
-                    _file_url_from_admin_node(exact_nodes[0] if exact_nodes else {})
+                    _matching_file_url_from_admin_nodes(exact_nodes, filename)
+                    or _matching_file_url_from_admin_nodes(fallback_nodes, filename)
+                    or _file_url_from_admin_node(exact_nodes[0] if exact_nodes else {})
                     or _file_url_from_admin_node(fallback_nodes[0] if fallback_nodes else {})
                 )
                 if resolved_url:
@@ -880,6 +894,15 @@ def _resolve_shopify_asset_reference(value: str, cache: dict) -> str:
     return cache.get(value, "")
 
 
+def _resolve_shopify_asset_reference_by_exact_filename(value: str, cache: dict) -> str:
+    resolved_url = _resolve_shopify_asset_reference(value, cache)
+    if not resolved_url or isinstance(value, str) and value.startswith(("https://", "http://")):
+        return resolved_url
+
+    filename = _shopify_asset_filename(value)
+    return resolved_url if _file_url_matches_filename(resolved_url, filename) else ""
+
+
 async def _resolve_homepage_layout_images(layout: dict) -> dict:
     cache = await _resolve_shopify_asset_references(_collect_homepage_asset_references(layout))
 
@@ -891,8 +914,8 @@ async def _resolve_homepage_layout_images(layout: dict) -> dict:
         occasion["image"] = _resolve_shopify_asset_reference(occasion.get("image", ""), cache)
 
     promo = layout.get("promoBanner", {})
-    promo["desktopImage"] = _resolve_shopify_asset_reference(promo.get("desktopImage", ""), cache)
-    promo["mobileImage"] = _resolve_shopify_asset_reference(promo.get("mobileImage", ""), cache)
+    promo["desktopImage"] = _resolve_shopify_asset_reference_by_exact_filename(promo.get("desktopImage", ""), cache)
+    promo["mobileImage"] = _resolve_shopify_asset_reference_by_exact_filename(promo.get("mobileImage", ""), cache)
 
     events = layout.get("eventsBanner", {})
     events["backgroundImage"] = _resolve_shopify_asset_reference(events.get("backgroundImage", ""), cache)

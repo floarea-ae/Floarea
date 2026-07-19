@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Linking, Dimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -11,31 +11,24 @@ import WhatsAppButton from '../../src/components/WhatsAppButton';
 import HeroSlider from '../../src/components/HeroSlider';
 import PromoBanner from '../../src/components/PromoBanner';
 
+const { width } = Dimensions.get('window');
+const INSTAGRAM_IMAGE_SIZE = (width - 40) / 2;
+
 export default function HomeScreen() {
   const router = useRouter();
   const [homepageLayout, setHomepageLayout] = useState<any>(null);
-  const [products, setProducts] = useState<any[]>([]);
-  const [customGiftBanner, setCustomGiftBanner] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
     try {
-      const [homepageData, prodData, giftData] = await Promise.all([
-        api.get('/homepage-layout').catch((e) => {
-          console.error('Homepage layout error:', e);
-          return null;
-        }),
-        api.get('/products?first=8'),
-        api.get('/custom-gift-banner').catch(() => null),
-      ]);
+      const homepageData = await api.get('/homepage-layout').catch((e) => {
+        console.error('Homepage layout error:', e);
+        return null;
+      });
       if (homepageData && Object.keys(homepageData).length > 0) {
         setHomepageLayout(homepageData);
-      }
-      setProducts(prodData.products || []);
-      if (giftData && Object.keys(giftData).length > 0) {
-        setCustomGiftBanner(giftData);
       }
     } catch (e) {
       console.error('Load error:', e);
@@ -66,10 +59,20 @@ export default function HomeScreen() {
       router.push('/events');
       return;
     }
+    if (link.startsWith('https://') || link.startsWith('http://')) {
+      Linking.openURL(link);
+      return;
+    }
     if (link.startsWith('/shop') || link.startsWith('/events')) {
       router.push(link as any);
     }
   }
+
+  const featuredProducts = homepageLayout?.featuredCollection?.products || [];
+  const serviceCards = homepageLayout?.flowerServices?.cards || [];
+  const customGiftBanner = homepageLayout?.customGiftBanner || {};
+  const instagramHeader = homepageLayout?.instagramHeader || {};
+  const instagramGallery = homepageLayout?.instagramGallery || [];
 
   if (loading) {
     return (
@@ -102,7 +105,7 @@ export default function HomeScreen() {
         {/* Hero Slider */}
         <HeroSlider
           slides={homepageLayout?.hero?.map((slide: any, index: number) => ({
-            id: slide.buttonLink || slide.title || `homepage-slide-${index}`,
+            id: `homepage-slide-${index}-${slide.buttonLink || slide.title || 'slide'}`,
             image: slide.mobileImage || slide.desktopImage || '',
             url: slide.buttonLink?.startsWith('/collections/')
               ? `/shop?collection=${getCollectionHandle(slide.buttonLink)}`
@@ -152,7 +155,7 @@ export default function HomeScreen() {
           title={homepageLayout?.promoBanner?.title || 'Preserved to\nLast Forever'}
           subtitle={homepageLayout?.promoBanner?.description || 'FOREVER ROSES'}
           ctaText={homepageLayout?.promoBanner?.buttonText || 'EXPLORE'}
-          image={homepageLayout?.promoBanner?.mobileImage || homepageLayout?.promoBanner?.desktopImage || products[2]?.image || ''}
+          image={homepageLayout?.promoBanner?.mobileImage || homepageLayout?.promoBanner?.desktopImage || featuredProducts[2]?.image || ''}
           onPress={() => navigateToBackendLink(homepageLayout?.promoBanner?.buttonLink || '/shop?collection=forever-special-occasion-roses')}
         />
 
@@ -161,13 +164,13 @@ export default function HomeScreen() {
         {/* Products */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Luxury Flowers, Exclusively for You</Text>
+            <Text style={styles.sectionTitle}>{homepageLayout?.featuredCollection?.heading || 'Luxury Flowers, Exclusively for You'}</Text>
             <TouchableOpacity testID="view-all-btn" onPress={() => router.push('/shop')}>
               <Text style={styles.viewAll}>View All</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.productGrid}>
-            {products.slice(0, 6).map((product) => (
+            {featuredProducts.slice(0, 6).map((product: any) => (
               <ProductCard key={product.handle} product={product} />
             ))}
           </View>
@@ -178,23 +181,23 @@ export default function HomeScreen() {
           title={homepageLayout?.eventsBanner?.heading || 'Floarea Events'}
           subtitle={homepageLayout?.eventsBanner?.subheading || 'Bespoke Floral Design'}
           ctaText={homepageLayout?.eventsBanner?.buttonText || 'INQUIRE NOW'}
-          image={homepageLayout?.eventsBanner?.backgroundImage || 'https://floarea.ae/cdn/shop/files/floarea_mobile_banner_v2.png'}
+          image={homepageLayout?.eventsBanner?.rightImage || 'https://floarea.ae/cdn/shop/files/floarea_mobile_banner_v2.png'}
           onPress={() => navigateToBackendLink(homepageLayout?.eventsBanner?.buttonLink || '/pages/events')}
         />
 
         {/* Services */}
         <View style={styles.servicesRow}>
-          {[
-            { icon: 'flash-outline', title: 'Fast Delivery', sub: 'Same-day across Dubai' },
-            { icon: 'flower-outline', title: 'Fresh Flowers', sub: 'Handpicked daily' },
-            { icon: 'color-palette-outline', title: 'Tailor Made', sub: 'Custom arrangements' },
-          ].map((svc, i) => (
+          {serviceCards.map((svc: any, i: number) => (
             <View key={i} style={styles.serviceItem}>
               <View style={styles.serviceIcon}>
-                <Ionicons name={svc.icon as any} size={22} color={COLORS.primary} />
+                {svc.image ? (
+                  <Image source={{ uri: svc.image }} style={styles.serviceImage} contentFit="contain" />
+                ) : (
+                  <Ionicons name="flower-outline" size={22} color={COLORS.primary} />
+                )}
               </View>
               <Text style={styles.serviceTitle}>{svc.title}</Text>
-              <Text style={styles.serviceSub}>{svc.sub}</Text>
+              <Text style={styles.serviceSub}>{svc.description}</Text>
             </View>
           ))}
         </View>
@@ -202,11 +205,31 @@ export default function HomeScreen() {
         {/* Custom Gift Banner */}
         <PromoBanner
           title={customGiftBanner?.title || 'Customized Gifts'}
-          subtitle={customGiftBanner?.subtitle || 'Tailored to Perfection'}
-          ctaText={customGiftBanner?.cta_text || 'CHAT ON WHATSAPP'}
-          image={customGiftBanner?.mobile_image || customGiftBanner?.desktop_image || 'https://floarea.ae/cdn/shop/files/banner_mobile_normal.jpg'}
-          onPress={() => Linking.openURL(WHATSAPP_URL)}
+          subtitle={customGiftBanner?.description || 'Tailored to Perfection'}
+          ctaText={customGiftBanner?.buttonText || 'CHAT ON WHATSAPP'}
+          image={customGiftBanner?.mobileImage || customGiftBanner?.desktopImage || 'https://floarea.ae/cdn/shop/files/banner_mobile_normal.jpg'}
+          onPress={() => navigateToBackendLink(customGiftBanner?.buttonLink || WHATSAPP_URL)}
         />
+
+        {/* Instagram */}
+        {(instagramHeader?.heading || instagramHeader?.text) && (
+          <View style={styles.section}>
+            {instagramHeader?.heading ? <Text style={styles.sectionTitle}>{instagramHeader.heading}</Text> : null}
+            {instagramHeader?.text ? <Text style={styles.instagramText}>{instagramHeader.text}</Text> : null}
+          </View>
+        )}
+        {instagramGallery.length > 0 && (
+          <View style={styles.instagramGrid}>
+            {instagramGallery.map((image: string, index: number) => (
+              <Image
+                key={`${image}-${index}`}
+                source={{ uri: image }}
+                style={styles.instagramImage}
+                contentFit="cover"
+              />
+            ))}
+          </View>
+        )}
 
         {/* Footer */}
         <View style={styles.footer}>
@@ -239,6 +262,7 @@ const styles = StyleSheet.create({
   servicesRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: 32 },
   serviceItem: { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
   serviceIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.surface, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  serviceImage: { width: 30, height: 30 },
   serviceTitle: { fontFamily: FONTS.bodyMedium, fontSize: 12, color: COLORS.text, textAlign: 'center' },
   serviceSub: { fontFamily: FONTS.body, fontSize: 10, color: COLORS.textMuted, textAlign: 'center', marginTop: 2 },
   productGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
@@ -249,6 +273,9 @@ const styles = StyleSheet.create({
   promoTitle: { fontFamily: FONTS.headingLight, fontSize: 30, color: COLORS.white, marginTop: 8, lineHeight: 36 },
   promoBtn: { borderWidth: 1, borderColor: COLORS.white, paddingHorizontal: 20, paddingVertical: 12, alignSelf: 'flex-start', marginTop: 16 },
   promoBtnText: { fontFamily: FONTS.bodySemiBold, fontSize: 11, color: COLORS.white, letterSpacing: 3 },
+  instagramText: { fontFamily: FONTS.body, fontSize: 14, color: COLORS.textMuted, marginTop: 8, lineHeight: 20 },
+  instagramGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, marginTop: 16, gap: 8 },
+  instagramImage: { width: INSTAGRAM_IMAGE_SIZE, height: INSTAGRAM_IMAGE_SIZE, borderRadius: 2 },
   footer: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20, marginTop: 24 },
   footerBrand: { fontFamily: FONTS.headingSemiBold, fontSize: 20, color: COLORS.primary, letterSpacing: 6 },
   footerTagline: { fontFamily: FONTS.headingLight, fontSize: 18, color: COLORS.text, textAlign: 'center', marginTop: 12, lineHeight: 24 },

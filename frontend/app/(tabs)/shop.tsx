@@ -20,6 +20,10 @@ export default function ShopScreen() {
     api.get('/collections').then(d => setCollections(d.collections || [])).catch(console.error);
   }, []);
 
+  useEffect(() => {
+    setSelectedCollection(params.collection || '');
+  }, [params.collection]);
+
   const loadProducts = useCallback(async () => {
     setLoading(true);
     try {
