@@ -54,6 +54,9 @@ export default function RootLayout() {
             <Stack.Screen name="auth" options={{ presentation: 'modal' }} />
             <Stack.Screen name="checkout" options={{ presentation: 'card' }} />
             <Stack.Screen name="orders" options={{ presentation: 'card' }} />
+            <Stack.Screen name="privacy-policy" options={{ presentation: 'card' }} />
+            <Stack.Screen name="terms-conditions" options={{ presentation: 'card' }} />
+            <Stack.Screen name="contact-us" options={{ presentation: 'card' }} />
           </Stack>
         </WishlistProvider>
       </CartProvider>

@@ -19,11 +19,17 @@ export class ApiError extends Error {
 
 class ApiClient {
   private shopifyToken: string | null = null;
+  private authRefreshHandler: (() => Promise<string | null>) | null = null;
   private unauthorizedHandler: (() => Promise<void> | void) | null = null;
   private unauthorizedPromise: Promise<void> | null = null;
+  private authRefreshPromise: Promise<string | null> | null = null;
 
   setAuth({ shopifyToken }: { shopifyToken: string | null }) {
     this.shopifyToken = shopifyToken;
+  }
+
+  setAuthRefreshHandler(handler: (() => Promise<string | null>) | null) {
+    this.authRefreshHandler = handler;
   }
 
   setUnauthorizedHandler(handler: (() => Promise<void> | void) | null) {
@@ -42,7 +48,24 @@ class ApiClient {
     await this.unauthorizedPromise;
   }
 
+  private async refreshAuthIfNeeded() {
+    if (!this.authRefreshHandler) return this.shopifyToken;
+
+    if (!this.authRefreshPromise) {
+      this.authRefreshPromise = Promise.resolve(this.authRefreshHandler()).finally(() => {
+        this.authRefreshPromise = null;
+      });
+    }
+
+    this.shopifyToken = await this.authRefreshPromise;
+    return this.shopifyToken;
+  }
+
   async request(path: string, options: CustomRequestInit = {}): Promise<any> {
+    if (options.requireAuth || options.useShopifyToken) {
+      await this.refreshAuthIfNeeded();
+    }
+
     if (options.requireAuth && !this.shopifyToken) {
       return Promise.reject(new ApiError(`Unauthorized: Endpoint ${path} requires authentication.`, 401));
     }

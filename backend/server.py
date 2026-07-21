@@ -32,6 +32,7 @@ SHOPIFY_API_VERSION = "2024-10"
 SHOPIFY_GRAPHQL_URL = f"https://{SHOPIFY_STORE}/api/{SHOPIFY_API_VERSION}/graphql.json"
 SHOPIFY_ADMIN_API_VERSION = "2026-07"
 SHOPIFY_ADMIN_GRAPHQL_URL = f"https://{SHOPIFY_STORE}/admin/api/{SHOPIFY_ADMIN_API_VERSION}/graphql.json"
+SHOPIFY_CUSTOMER_API_URL = ""
 
 # Supabase config
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
@@ -132,6 +133,86 @@ async def shopify_admin_graphql(query: str, variables: dict = None) -> dict:
     if "errors" in data:
         logger.error(f"Shopify Admin GraphQL errors: {data['errors']}")
         raise HTTPException(status_code=502, detail="Shopify Admin GraphQL error")
+
+    return data.get("data", {})
+
+
+# ─── Shopify Customer Account GraphQL Helper ───
+async def _get_customer_account_api_url() -> str:
+    global SHOPIFY_CUSTOMER_API_URL
+
+    if SHOPIFY_CUSTOMER_API_URL:
+        return SHOPIFY_CUSTOMER_API_URL
+    if not SHOPIFY_STORE:
+        logger.error("SHOPIFY_STORE_DOMAIN is not configured")
+        raise HTTPException(status_code=500, detail="Shopify store domain missing")
+
+    discovery_url = f"https://{SHOPIFY_STORE}/.well-known/customer-account-api"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client_http:
+            response = await client_http.get(discovery_url)
+    except httpx.RequestError as e:
+        logger.error(f"Shopify Customer Account API discovery error: {e}")
+        raise HTTPException(status_code=503, detail="Shopify Customer Account API unavailable")
+
+    if response.status_code >= 400:
+        logger.error(f"Shopify Customer Account API discovery failed: {response.status_code} - {response.text}")
+        raise HTTPException(status_code=502, detail="Shopify Customer Account API discovery failed")
+
+    try:
+        data = response.json()
+    except ValueError:
+        logger.error(f"Shopify Customer Account API discovery returned non-JSON response: {response.text}")
+        raise HTTPException(status_code=502, detail="Invalid Shopify Customer Account API discovery response")
+
+    graphql_url = data.get("graphql_api")
+    if not graphql_url:
+        logger.error(f"Shopify Customer Account API discovery missing graphql_api: {data}")
+        raise HTTPException(status_code=502, detail="Shopify Customer Account API endpoint missing")
+
+    SHOPIFY_CUSTOMER_API_URL = graphql_url
+    return SHOPIFY_CUSTOMER_API_URL
+
+
+async def shopify_customer_account_graphql(
+    customer_access_token: str,
+    query: str,
+    variables: dict = None
+) -> dict:
+    if not customer_access_token:
+        raise HTTPException(status_code=401, detail="Shopify customer token required")
+
+    endpoint = await _get_customer_account_api_url()
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": customer_access_token,
+    }
+    payload = {"query": query}
+    if variables:
+        payload["variables"] = variables
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client_http:
+            response = await client_http.post(endpoint, json=payload, headers=headers)
+    except httpx.RequestError as e:
+        logger.error(f"Shopify Customer Account API network error: {e}")
+        raise HTTPException(status_code=503, detail="Shopify Customer Account API unavailable")
+
+    if response.status_code in (401, 403):
+        raise HTTPException(status_code=401, detail="Invalid or expired customer token")
+    if response.status_code >= 400:
+        logger.error(f"Shopify Customer Account API HTTP error: {response.status_code} - {response.text}")
+        raise HTTPException(status_code=502, detail="Shopify Customer Account API error")
+
+    try:
+        data = response.json()
+    except ValueError:
+        logger.error(f"Shopify Customer Account API returned non-JSON response: {response.text}")
+        raise HTTPException(status_code=502, detail="Invalid Shopify Customer Account API response")
+
+    if "errors" in data:
+        logger.error(f"Shopify Customer Account GraphQL errors: {data['errors']}")
+        raise HTTPException(status_code=502, detail="Shopify Customer Account GraphQL error")
 
     return data.get("data", {})
 
@@ -1270,10 +1351,25 @@ async def _get_shopify_customer(customer_token: str) -> dict:
     data = await shopify_graphql(query, {"token": customer_token})
     return data.get("customer", {})
 
+async def _get_customer_account_customer(customer_token: str) -> dict:
+    query = """
+    query CustomerAccountCustomer {
+      customer {
+        id
+        displayName
+        firstName
+        lastName
+        emailAddress { emailAddress }
+      }
+    }
+    """
+    data = await shopify_customer_account_graphql(customer_token, query)
+    return data.get("customer", {})
+
 async def _authenticate_shopify_customer(shopify_token: Optional[str]) -> dict:
     if not shopify_token:
         raise HTTPException(status_code=401, detail="Shopify customer token required")
-    profile = await _get_shopify_customer(shopify_token)
+    profile = await _get_customer_account_customer(shopify_token)
     if not profile or not profile.get("id"):
         raise HTTPException(status_code=401, detail="Invalid or expired customer token")
     return profile
@@ -1283,30 +1379,31 @@ async def get_shopify_orders(shopify_token: str = Header(alias="x-shopify-custom
     if not shopify_token:
         raise HTTPException(status_code=401, detail="Shopify customer token required")
     query = """
-    query($token: String!) {
-      customer(customerAccessToken: $token) {
-        orders(first: 20, sortKey: PROCESSED_AT, reverse: true) {
+    query CustomerAccountOrders {
+      customer {
+        orders(first: 20, reverse: true) {
           edges {
             node {
-              id name orderNumber processedAt
+              id name number processedAt
               financialStatus fulfillmentStatus
               totalPrice { amount currencyCode }
               lineItems(first: 10) {
                 edges {
                   node {
                     title quantity
-                    variant { image { url } price { amount currencyCode } }
+                    image { url }
+                    price { amount currencyCode }
                   }
                 }
               }
-              shippingAddress { address1 city province country }
+              shippingAddress { address1 city province country zip }
             }
           }
         }
       }
     }
     """
-    data = await shopify_graphql(query, {"token": shopify_token})
+    data = await shopify_customer_account_graphql(shopify_token, query)
     customer = data.get("customer")
     if not customer:
         raise HTTPException(status_code=401, detail="Invalid or expired customer token")
@@ -1316,14 +1413,13 @@ async def get_shopify_orders(shopify_token: str = Header(alias="x-shopify-custom
         items = []
         for li_edge in node.get("lineItems", {}).get("edges", []):
             li = li_edge["node"]
-            variant = li.get("variant") or {}
             items.append({
                 "title": li["title"], "quantity": li["quantity"],
-                "price": float(variant.get("price", {}).get("amount", 0)),
-                "image": (variant.get("image") or {}).get("url", ""),
+                "price": float((li.get("price") or {}).get("amount", 0)),
+                "image": (li.get("image") or {}).get("url", ""),
             })
         orders.append({
-            "id": node["id"], "name": node["name"], "order_number": node.get("orderNumber"),
+            "id": node["id"], "name": node["name"], "order_number": node.get("number"),
             "processed_at": node.get("processedAt", ""),
             "financial_status": node.get("financialStatus", ""),
             "fulfillment_status": node.get("fulfillmentStatus", ""),
@@ -1355,7 +1451,7 @@ async def register_push_token(
 ):
     profile = await _authenticate_shopify_customer(shopify_token)
     customer_id = profile["id"]
-    customer_email = profile.get("email", "")
+    customer_email = (profile.get("emailAddress") or {}).get("emailAddress", "")
 
     # Store token in Supabase
     headers = {

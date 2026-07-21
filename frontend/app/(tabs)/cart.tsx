@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, Platform, TextInput } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -76,6 +76,7 @@ export default function CartScreen() {
   });
 
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [cardMessage, setCardMessage] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const availableSlots = getAvailableSlots(selectedDate);
@@ -129,6 +130,9 @@ export default function CartScreen() {
         { key: 'Delivery Date', value: formatDate(selectedDate) },
         { key: 'Delivery Time', value: selectedSlot }
       ];
+      if (cardMessage.trim()) {
+        attributes.push({ key: 'Card Message', value: cardMessage.trim() });
+      }
 
       const endpoint = shopifyToken ? '/cart/create-with-customer' : '/cart/create';
       const options = shopifyToken ? { useShopifyToken: true } : undefined;
@@ -266,6 +270,19 @@ export default function CartScreen() {
                   })}
                 </View>
               )}
+
+              <Text style={styles.pickerLabel}>Card Message</Text>
+              <TextInput
+                testID="card-message-input"
+                style={styles.cardMessageInput}
+                placeholder="Write a short message for the recipient"
+                placeholderTextColor={COLORS.textMuted}
+                value={cardMessage}
+                onChangeText={setCardMessage}
+                multiline
+                maxLength={250}
+                textAlignVertical="top"
+              />
             </View>
 
             <View style={styles.summary}>
@@ -343,6 +360,7 @@ const styles = StyleSheet.create({
   noSlotsContainer: { paddingVertical: 16, alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: 2, marginTop: 4 },
   noSlotsText: { fontFamily: FONTS.bodySemiBold, fontSize: 14, color: COLORS.accent },
   noSlotsSubText: { fontFamily: FONTS.body, fontSize: 12, color: COLORS.textMuted, marginTop: 4 },
+  cardMessageInput: { minHeight: 92, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 2, paddingHorizontal: 14, paddingVertical: 12, fontFamily: FONTS.body, fontSize: 14, color: COLORS.text, lineHeight: 20 },
   summary: { backgroundColor: COLORS.white, borderRadius: 2, padding: 20, marginTop: 8 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   summaryLabel: { fontFamily: FONTS.body, fontSize: 14, color: COLORS.textMuted },

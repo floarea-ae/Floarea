@@ -71,10 +71,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await logout();
   }, [logout]);
 
+  const refreshAuth = useCallback(async () => {
+    const session = await ShopifyCustomerAuth.getStoredSession();
+    setUser(session.user);
+    setShopifyToken(session.accessToken);
+    return session.accessToken;
+  }, []);
+
   useEffect(() => {
     api.setUnauthorizedHandler(handleUnauthorized);
-    return () => api.setUnauthorizedHandler(null);
-  }, [handleUnauthorized]);
+    api.setAuthRefreshHandler(refreshAuth);
+    return () => {
+      api.setUnauthorizedHandler(null);
+      api.setAuthRefreshHandler(null);
+    };
+  }, [handleUnauthorized, refreshAuth]);
 
   return (
     <AuthContext.Provider value={{ user, isAuthReady, shopifyToken, login, register, logout, handleUnauthorized }}>

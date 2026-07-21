@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,6 +32,17 @@ export default function ProfileScreen() {
           <TouchableOpacity testID="register-btn" style={styles.registerBtn} onPress={() => router.push('/auth')}>
             <Text style={styles.registerBtnText}>CREATE ACCOUNT</Text>
           </TouchableOpacity>
+          <View style={styles.guestLinks}>
+            <TouchableOpacity onPress={() => router.push('/contact-us' as any)}>
+              <Text style={styles.guestLinkText}>Contact Us</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/privacy-policy' as any)}>
+              <Text style={styles.guestLinkText}>Privacy Policy</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/terms-conditions' as any)}>
+              <Text style={styles.guestLinkText}>Terms & Conditions</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -81,6 +92,24 @@ export default function ProfileScreen() {
             <Text style={styles.menuText}>Contact via WhatsApp</Text>
             <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
           </TouchableOpacity>
+
+          <TouchableOpacity testID="contact-us-btn" style={styles.menuItem} onPress={() => router.push('/contact-us' as any)}>
+            <Ionicons name="chatbubble-ellipses-outline" size={22} color={COLORS.primary} />
+            <Text style={styles.menuText}>Contact Us</Text>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity testID="privacy-policy-btn" style={styles.menuItem} onPress={() => router.push('/privacy-policy' as any)}>
+            <Ionicons name="shield-checkmark-outline" size={22} color={COLORS.primary} />
+            <Text style={styles.menuText}>Privacy Policy</Text>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity testID="terms-conditions-btn" style={styles.menuItem} onPress={() => router.push('/terms-conditions' as any)}>
+            <Ionicons name="document-text-outline" size={22} color={COLORS.primary} />
+            <Text style={styles.menuText}>Terms & Conditions</Text>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
+          </TouchableOpacity>
         </View>
 
         {/* Store Info */}
@@ -126,6 +155,8 @@ const styles = StyleSheet.create({
   loginBtnText: { fontFamily: FONTS.bodySemiBold, fontSize: 13, color: COLORS.white, letterSpacing: 3 },
   registerBtn: { borderWidth: 1, borderColor: COLORS.primary, paddingHorizontal: 40, paddingVertical: 16, marginTop: 12, width: '100%', alignItems: 'center' },
   registerBtnText: { fontFamily: FONTS.bodySemiBold, fontSize: 13, color: COLORS.primary, letterSpacing: 3 },
+  guestLinks: { marginTop: 28, alignItems: 'center', gap: 12 },
+  guestLinkText: { fontFamily: FONTS.bodyMedium, fontSize: 13, color: COLORS.primary },
 
   userCard: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, marginHorizontal: 16, backgroundColor: COLORS.white, borderRadius: 2 },
   avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' },

@@ -157,6 +157,27 @@ async function removeStoredSession(): Promise<void> {
   await Storage.multiRemoveSecure([TOKEN_KEY, REFRESH_TOKEN_KEY, ID_TOKEN_KEY, EXPIRES_AT_KEY, USER_KEY, 'auth_token', 'push_token']);
 }
 
+async function endShopifySession(): Promise<void> {
+  if (!config.logoutEndpoint || !config.redirectUri) return;
+
+  const idToken = await Storage.getSecureItem(ID_TOKEN_KEY);
+  if (!idToken) return;
+
+  const logoutUrl =
+    `${config.logoutEndpoint}?id_token_hint=${encodeURIComponent(idToken)}` +
+    `&post_logout_redirect_uri=${encodeURIComponent(config.redirectUri)}`;
+
+  try {
+    await WebBrowser.openAuthSessionAsync(logoutUrl, config.redirectUri);
+  } catch {
+    try {
+      await fetch(logoutUrl);
+    } catch {
+      // Local logout should still complete if Shopify session invalidation fails.
+    }
+  }
+}
+
 export const ShopifyCustomerAuth = {
   async signIn(): Promise<StoredSession> {
     assertConfig();
@@ -223,8 +244,7 @@ export const ShopifyCustomerAuth = {
   },
 
   async clearSession(): Promise<void> {
-    
+    await endShopifySession();
     await removeStoredSession();
-
   },
 };
