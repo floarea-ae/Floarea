@@ -8,8 +8,13 @@ import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { CartProvider } from '../src/context/CartContext';
 import { WishlistProvider } from '../src/context/WishlistContext';
 import { registerForPushNotifications, registerTokenWithBackend, useNotificationListeners } from '../src/notifications';
+import { prefetchHomepageLayout } from '../src/services/homepage';
 
 SplashScreen.preventAutoHideAsync();
+
+// Fired at module load, in parallel with font loading and auth initialization,
+// so the homepage request isn't serialized behind either of them.
+prefetchHomepageLayout().catch(() => {});
 
 function PushNotificationHandler() {
   const { shopifyToken } = useAuth();
@@ -43,9 +48,13 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
-    <AuthProvider>
-      <CartProvider>
-        <WishlistProvider>
+    // Cart/Wishlist wrap AuthProvider (rather than nesting inside it) so their
+    // storage reads start immediately in parallel with the auth check, instead
+    // of waiting for AuthProvider's internal readiness gate to lift first.
+    // AuthProvider's own gating behavior below is unchanged.
+    <CartProvider>
+      <WishlistProvider>
+        <AuthProvider>
           <PushNotificationHandler />
           <StatusBar style="dark" />
           <Stack screenOptions={{ headerShown: false }}>
@@ -58,8 +67,8 @@ export default function RootLayout() {
             <Stack.Screen name="terms-conditions" options={{ presentation: 'card' }} />
             <Stack.Screen name="contact-us" options={{ presentation: 'card' }} />
           </Stack>
-        </WishlistProvider>
-      </CartProvider>
-    </AuthProvider>
+        </AuthProvider>
+      </WishlistProvider>
+    </CartProvider>
   );
 }

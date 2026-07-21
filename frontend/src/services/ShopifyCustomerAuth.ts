@@ -222,14 +222,15 @@ export const ShopifyCustomerAuth = {
   },
 
   async getStoredSession(): Promise<StoredSession> {
-    const [accessToken, refreshToken, expiresAt] = await Promise.all([
+    const [accessToken, refreshToken, expiresAt, storedUser] = await Promise.all([
       Storage.getSecureItem(TOKEN_KEY),
       Storage.getSecureItem(REFRESH_TOKEN_KEY),
       Storage.getSecureItem(EXPIRES_AT_KEY),
+      getStoredUser(),
     ]);
 
     if (accessToken && !isExpired(expiresAt)) {
-      return { accessToken, user: await getStoredUser() };
+      return { accessToken, user: storedUser };
     }
 
     if (refreshToken) {

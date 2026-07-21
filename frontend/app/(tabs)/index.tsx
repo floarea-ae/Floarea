@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { api } from '../../src/api';
+import { prefetchHomepageLayout } from '../../src/services/homepage';
 import { COLORS, FONTS, WHATSAPP_URL } from '../../src/constants';
 import ProductCard from '../../src/components/ProductCard';
 import WhatsAppButton from '../../src/components/WhatsAppButton';
@@ -24,7 +24,7 @@ export default function HomeScreen() {
 
   async function loadData() {
     try {
-      const homepageData = await api.get('/homepage-layout').catch((e) => {
+      const homepageData = await prefetchHomepageLayout().catch((e) => {
         console.error('Homepage layout error:', e);
         return null;
       });

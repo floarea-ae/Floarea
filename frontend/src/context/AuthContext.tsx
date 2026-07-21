@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { api } from '../api';
 import { COLORS } from '../constants';
@@ -87,8 +87,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [handleUnauthorized, refreshAuth]);
 
+  const contextValue = useMemo(
+    () => ({ user, isAuthReady, shopifyToken, login, register, logout, handleUnauthorized }),
+    [user, isAuthReady, shopifyToken, login, register, logout, handleUnauthorized]
+  );
+
   return (
-    <AuthContext.Provider value={{ user, isAuthReady, shopifyToken, login, register, logout, handleUnauthorized }}>
+    <AuthContext.Provider value={contextValue}>
       {!isAuthReady ? (
         <View style={styles.splashContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />

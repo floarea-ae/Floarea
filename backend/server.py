@@ -9,6 +9,7 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.cors import CORSMiddleware
 from io import BytesIO
+import asyncio
 import base64
 import json
 import os
@@ -741,12 +742,19 @@ def _normalize_instagram_gallery(layout: dict) -> list:
 
 
 async def _normalize_homepage_layout(layout: dict) -> dict:
+    # occasions and featuredCollection are independent Shopify lookups
+    # (different keys of `layout`, different GraphQL calls) - run them
+    # concurrently instead of sequentially.
+    occasions, featured_collection = await asyncio.gather(
+        _normalize_occasions(layout),
+        _normalize_featured_collection(layout),
+    )
     return {
         "hero": _normalize_hero(layout),
-        "occasions": await _normalize_occasions(layout),
+        "occasions": occasions,
         "promoBanner": _normalize_promo_banner(layout),
         "eventsBanner": _normalize_events_banner(layout),
-        "featuredCollection": await _normalize_featured_collection(layout),
+        "featuredCollection": featured_collection,
         "flowerServices": _normalize_flower_services(layout),
         "customGiftBanner": _normalize_custom_gift_banner(layout),
         "instagramHeader": _normalize_instagram_header(layout),
@@ -2275,13 +2283,38 @@ async def get_custom_gift_banner():
     return await _get_custom_gift_banner()
 
 
-# ─── Health ───
-@api_router.get("/homepage-layout")
-async def get_homepage_layout():
+# Homepage layout is merchant-edited content that rarely changes between
+# requests; caching the full resolved response avoids re-fetching the theme
+# template and re-resolving collections/products/assets on every app open.
+HOMEPAGE_LAYOUT_CACHE_TTL_SECONDS = 300
+_homepage_layout_cache = {"data": None, "expires_at": 0.0}
+_homepage_layout_cache_lock = asyncio.Lock()
+
+
+async def _build_homepage_layout() -> dict:
     template = await _get_active_theme_homepage_template()
     layout = _parse_homepage_layout_template(template)
     normalized = await _normalize_homepage_layout(layout)
     return await _resolve_homepage_layout_images(normalized)
+
+
+# ─── Health ───
+@api_router.get("/homepage-layout")
+async def get_homepage_layout():
+    now = _shopify_asset_cache_now()
+    if _homepage_layout_cache["data"] is not None and _homepage_layout_cache["expires_at"] > now:
+        return _homepage_layout_cache["data"]
+
+    async with _homepage_layout_cache_lock:
+        # Re-check inside the lock in case a concurrent request already refreshed it.
+        now = _shopify_asset_cache_now()
+        if _homepage_layout_cache["data"] is not None and _homepage_layout_cache["expires_at"] > now:
+            return _homepage_layout_cache["data"]
+
+        data = await _build_homepage_layout()
+        _homepage_layout_cache["data"] = data
+        _homepage_layout_cache["expires_at"] = now + HOMEPAGE_LAYOUT_CACHE_TTL_SECONDS
+        return data
 
 
 @api_router.get("/admin-test")
