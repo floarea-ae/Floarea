@@ -168,15 +168,19 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>{homepageLayout?.featuredCollection?.heading || 'Luxury Flowers, Exclusively for You'}</Text>
-            <TouchableOpacity testID="view-all-btn" onPress={() => router.push('/shop')}>
-              <Text style={styles.viewAll}>View All</Text>
-            </TouchableOpacity>
           </View>
           <View style={styles.productGrid}>
             {featuredProducts.slice(0, 6).map((product: any) => (
               <ProductCard key={product.handle} product={product} />
             ))}
           </View>
+          <TouchableOpacity
+              testID="view-all-btn"
+              style={styles.showMoreButton}
+              onPress={() => router.push('/shop')}
+>
+           <Text style={styles.showMoreButtonText}>Show More</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Events Banner */}
@@ -268,8 +272,23 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 18, gap: 16 },
   sectionTitle: { fontFamily: FONTS.headingLight, fontSize: 27, color: COLORS.text, lineHeight: 32, textAlign: 'center' },
   sectionIntro: { fontFamily: FONTS.body, fontSize: 13, color: COLORS.textMuted, textAlign: 'center', lineHeight: 20, marginTop: 8, marginBottom: 20 },
-  viewAll: { fontFamily: FONTS.bodySemiBold, fontSize: 12, color: COLORS.primary, letterSpacing: 1, textTransform: 'uppercase' },
-  occasionGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12, marginTop: 18 },
+showMoreButton: {
+  alignSelf: 'center',
+  marginTop: 20,
+  paddingHorizontal: 24,
+  paddingVertical: 12,
+  backgroundColor: '#000',
+  borderRadius: 8,
+},
+
+showMoreButtonText: {
+  fontFamily: FONTS.bodySemiBold,
+  fontSize: 14,
+  color: '#FFF',
+  textTransform: 'uppercase',
+  letterSpacing: 1,
+},
+occasionGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12, marginTop: 18 },
   catCard: { width: OCCASION_CARD_WIDTH, minHeight: 142, backgroundColor: 'rgba(255,255,255,0.72)', borderRadius: 6, alignItems: 'center', justifyContent: 'center', padding: 14 },
   catImageFrame: { width: '100%', height: 84, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   catImage: { width: '100%', height: '100%' },
