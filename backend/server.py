@@ -20,8 +20,8 @@ import hashlib
 import html
 import re
 from urllib.parse import quote, unquote
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field, field_validator
+from typing import Dict, List, Optional
 from datetime import datetime, timezone
 
 # Shopify config
@@ -284,6 +284,60 @@ def transform_product(node: dict) -> dict:
         "collections": collections,
         "variant_id": variants[0]["id"] if variants else "",
     }
+
+def transform_cart(cart: dict) -> dict:
+    lines = []
+    for edge in cart.get("lines", {}).get("edges", []):
+        line = edge["node"]
+        merchandise = line.get("merchandise", {}) or {}
+        product = merchandise.get("product", {}) or {}
+        image = merchandise.get("image") or {}
+        price = merchandise.get("price", {}) or {}
+        line_total = line.get("cost", {}).get("totalAmount", {}) or {}
+        lines.append({
+            "line_id": line["id"],
+            "merchandise_id": merchandise.get("id", ""),
+            "quantity": line.get("quantity", 0),
+            "title": product.get("title", ""),
+            "variant_title": merchandise.get("title"),
+            "image": image.get("url"),
+            "price": {
+                "amount": price.get("amount", "0.0"),
+                "currency_code": price.get("currencyCode", "AED"),
+            },
+            "line_total": {
+                "amount": line_total.get("amount", "0.0"),
+                "currency_code": line_total.get("currencyCode", "AED"),
+            },
+            "attributes": [{"key": a["key"], "value": a["value"]} for a in line.get("attributes", [])],
+        })
+
+    cost = cart.get("cost", {}) or {}
+    subtotal = cost.get("subtotalAmount", {}) or {}
+    total = cost.get("totalAmount", {}) or {}
+    tax = cost.get("totalTaxAmount", {}) or {}
+    buyer_identity = cart.get("buyerIdentity", {}) or {}
+
+    return {
+        "cart_id": cart["id"],
+        "checkout_url": cart.get("checkoutUrl", ""),
+        "note": cart.get("note") or "",
+        "attributes": [{"key": a["key"], "value": a["value"]} for a in cart.get("attributes", [])],
+        "buyer_identity": {
+            "customer_access_token_present": bool(buyer_identity.get("customer")),
+            "email": buyer_identity.get("email"),
+            "phone": buyer_identity.get("phone"),
+        },
+        "lines": lines,
+        "cost": {
+            "subtotal_amount": subtotal.get("amount", "0.0"),
+            "total_amount": total.get("amount", "0.0"),
+            "total_tax": tax.get("amount", "0.0"),
+            "currency_code": total.get("currencyCode", "AED"),
+        },
+        "total_quantity": cart.get("totalQuantity", 0),
+    }
+
 
 def transform_collection(node: dict) -> dict:
     return {
@@ -1118,6 +1172,47 @@ class CreateCartReq(BaseModel):
     lines: List[CartLineInput]
     attributes: Optional[List[CartAttributeInput]] = None
 
+class CartLineUpdateInput(BaseModel):
+    lineId: str
+    quantity: int = Field(gt=0)
+
+class CartLinesAddReq(BaseModel):
+    cart_id: str = Field(min_length=1)
+    lines: List[CartLineInput]
+
+class CartLinesUpdateReq(BaseModel):
+    cart_id: str = Field(min_length=1)
+    lines: List[CartLineUpdateInput]
+
+class CartLinesRemoveReq(BaseModel):
+    cart_id: str = Field(min_length=1)
+    lineIds: List[str]
+
+class CartBuyerIdentityReq(BaseModel):
+    cart_id: str = Field(min_length=1)
+
+# Mirrors frontend/src/constants/cart.ts's CART_ATTRIBUTE_KEYS. Attribute keys
+# this app writes are read by delivery ops and (for Gift Note, Phase 6) the
+# gift-wrap flow — rejecting anything else here catches a client-side typo
+# before it silently lands as a meaningless cart attribute.
+ALLOWED_CART_ATTRIBUTE_KEYS = {"Delivery Date", "Delivery Time", "Gift Note"}
+
+class CartAttributesUpdateReq(BaseModel):
+    cart_id: str = Field(min_length=1)
+    attributes: List[CartAttributeInput]
+
+    @field_validator("attributes")
+    @classmethod
+    def _validate_known_keys(cls, attrs: List[CartAttributeInput]) -> List[CartAttributeInput]:
+        for attr in attrs:
+            if attr.key not in ALLOWED_CART_ATTRIBUTE_KEYS:
+                raise ValueError(f"Unsupported cart attribute key: {attr.key}")
+        return attrs
+
+class CartNoteUpdateReq(BaseModel):
+    cart_id: str = Field(min_length=1)
+    note: str = Field(max_length=250)
+
 
 # ─── Auth Routes ───
 # ─── Shopify Collections ───
@@ -1248,6 +1343,228 @@ async def get_product(handle: str):
 
 
 # ─── Shopify Cart / Checkout ───
+# Reused (not inlined per-endpoint like most other queries in this file) because the
+# full cart shape is reused verbatim by every cart mutation endpoint added alongside
+# GET /cart in Phase 2 (lines/add, lines/update, lines/remove, attributes, note,
+# buyer-identity) — unlike products/collections, which vary shape per call site.
+CART_FIELDS_FRAGMENT = """
+fragment CartFields on Cart {
+  id
+  checkoutUrl
+  note
+  totalQuantity
+  attributes { key value }
+  buyerIdentity { email phone customer { id } }
+  cost {
+    subtotalAmount { amount currencyCode }
+    totalAmount { amount currencyCode }
+    totalTaxAmount { amount currencyCode }
+  }
+  lines(first: 50) {
+    edges {
+      node {
+        id
+        quantity
+        attributes { key value }
+        cost { totalAmount { amount currencyCode } }
+        merchandise {
+          ... on ProductVariant {
+            id
+            title
+            price { amount currencyCode }
+            image { url }
+            product { title }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+
+@api_router.get("/cart")
+async def get_cart(cart_id: str = Query(..., min_length=1)):
+    query = f"""
+    query($id: ID!) {{
+      cart(id: $id) {{
+        ...CartFields
+      }}
+    }}
+    {CART_FIELDS_FRAGMENT}
+    """
+    data = await shopify_graphql(query, {"id": cart_id})
+    cart = data.get("cart")
+    if not cart:
+        raise HTTPException(status_code=404, detail="Cart not found")
+    return transform_cart(cart)
+
+
+@api_router.post("/cart/lines/add")
+async def add_cart_lines(req: CartLinesAddReq):
+    lines = [{"merchandiseId": line.variantId, "quantity": line.quantity} for line in req.lines]
+    mutation = f"""
+    mutation($cartId: ID!, $lines: [CartLineInput!]!) {{
+      cartLinesAdd(cartId: $cartId, lines: $lines) {{
+        cart {{ ...CartFields }}
+        userErrors {{ field message }}
+      }}
+    }}
+    {CART_FIELDS_FRAGMENT}
+    """
+    data = await shopify_graphql(mutation, {"cartId": req.cart_id, "lines": lines})
+    result = data.get("cartLinesAdd", {})
+    errors = result.get("userErrors", [])
+    if errors:
+        raise HTTPException(status_code=400, detail=errors[0].get("message", "Could not add item to cart"))
+    cart = result.get("cart")
+    if not cart:
+        raise HTTPException(status_code=404, detail="Cart not found")
+    return transform_cart(cart)
+
+
+@api_router.post("/cart/lines/update")
+async def update_cart_lines(req: CartLinesUpdateReq):
+    lines = [{"id": line.lineId, "quantity": line.quantity} for line in req.lines]
+    mutation = f"""
+    mutation($cartId: ID!, $lines: [CartLineUpdateInput!]!) {{
+      cartLinesUpdate(cartId: $cartId, lines: $lines) {{
+        cart {{ ...CartFields }}
+        userErrors {{ field message }}
+      }}
+    }}
+    {CART_FIELDS_FRAGMENT}
+    """
+    data = await shopify_graphql(mutation, {"cartId": req.cart_id, "lines": lines})
+    result = data.get("cartLinesUpdate", {})
+    errors = result.get("userErrors", [])
+    if errors:
+        raise HTTPException(status_code=400, detail=errors[0].get("message", "Could not update cart"))
+    cart = result.get("cart")
+    if not cart:
+        raise HTTPException(status_code=404, detail="Cart not found")
+    return transform_cart(cart)
+
+
+@api_router.post("/cart/lines/remove")
+async def remove_cart_lines(req: CartLinesRemoveReq):
+    mutation = f"""
+    mutation($cartId: ID!, $lineIds: [ID!]!) {{
+      cartLinesRemove(cartId: $cartId, lineIds: $lineIds) {{
+        cart {{ ...CartFields }}
+        userErrors {{ field message }}
+      }}
+    }}
+    {CART_FIELDS_FRAGMENT}
+    """
+    data = await shopify_graphql(mutation, {"cartId": req.cart_id, "lineIds": req.lineIds})
+    result = data.get("cartLinesRemove", {})
+    errors = result.get("userErrors", [])
+    if errors:
+        raise HTTPException(status_code=400, detail=errors[0].get("message", "Could not remove item from cart"))
+    cart = result.get("cart")
+    if not cart:
+        raise HTTPException(status_code=404, detail="Cart not found")
+    return transform_cart(cart)
+
+
+@api_router.post("/cart/buyer-identity")
+async def update_cart_buyer_identity(
+    req: CartBuyerIdentityReq,
+    shopify_token: Optional[str] = Header(default=None, alias="x-shopify-customer-token"),
+):
+    # An explicit null (not an omitted field) is sent for customerAccessToken
+    # when logged out, so this call can also be used to detach a previously
+    # attached customer, not just attach one.
+    mutation = f"""
+    mutation($cartId: ID!, $buyerIdentity: CartBuyerIdentityInput!) {{
+      cartBuyerIdentityUpdate(cartId: $cartId, buyerIdentity: $buyerIdentity) {{
+        cart {{ ...CartFields }}
+        userErrors {{ field message }}
+      }}
+    }}
+    {CART_FIELDS_FRAGMENT}
+    """
+    data = await shopify_graphql(mutation, {
+        "cartId": req.cart_id,
+        "buyerIdentity": {"customerAccessToken": shopify_token},
+    })
+    result = data.get("cartBuyerIdentityUpdate", {})
+    errors = result.get("userErrors", [])
+    if errors:
+        raise HTTPException(status_code=400, detail=errors[0].get("message", "Could not update buyer identity"))
+    cart = result.get("cart")
+    if not cart:
+        raise HTTPException(status_code=404, detail="Cart not found")
+    return transform_cart(cart)
+
+
+@api_router.post("/cart/attributes")
+async def update_cart_attributes(req: CartAttributesUpdateReq):
+    # cartAttributesUpdate replaces the entire attribute set rather than
+    # merging, so the current set is fetched first and the incoming keys are
+    # merged on top before sending — callers only pass the keys they're
+    # actually changing (e.g. just Delivery Date) without wiping others
+    # (e.g. Delivery Time, or Gift Note once Phase 6 lands).
+    current_query = """
+    query($id: ID!) {
+      cart(id: $id) {
+        attributes { key value }
+      }
+    }
+    """
+    current_data = await shopify_graphql(current_query, {"id": req.cart_id})
+    current_cart = current_data.get("cart")
+    if not current_cart:
+        raise HTTPException(status_code=404, detail="Cart not found")
+
+    merged: Dict[str, str] = {a["key"]: a["value"] for a in current_cart.get("attributes", [])}
+    for attr in req.attributes:
+        merged[attr.key] = attr.value
+    merged_attributes = [{"key": k, "value": v} for k, v in merged.items()]
+
+    mutation = f"""
+    mutation($cartId: ID!, $attributes: [AttributeInput!]!) {{
+      cartAttributesUpdate(cartId: $cartId, attributes: $attributes) {{
+        cart {{ ...CartFields }}
+        userErrors {{ field message }}
+      }}
+    }}
+    {CART_FIELDS_FRAGMENT}
+    """
+    data = await shopify_graphql(mutation, {"cartId": req.cart_id, "attributes": merged_attributes})
+    result = data.get("cartAttributesUpdate", {})
+    errors = result.get("userErrors", [])
+    if errors:
+        raise HTTPException(status_code=400, detail=errors[0].get("message", "Could not update cart attributes"))
+    cart = result.get("cart")
+    if not cart:
+        raise HTTPException(status_code=404, detail="Cart not found")
+    return transform_cart(cart)
+
+
+@api_router.post("/cart/note")
+async def update_cart_note(req: CartNoteUpdateReq):
+    mutation = f"""
+    mutation($cartId: ID!, $note: String!) {{
+      cartNoteUpdate(cartId: $cartId, note: $note) {{
+        cart {{ ...CartFields }}
+        userErrors {{ field message }}
+      }}
+    }}
+    {CART_FIELDS_FRAGMENT}
+    """
+    data = await shopify_graphql(mutation, {"cartId": req.cart_id, "note": req.note})
+    result = data.get("cartNoteUpdate", {})
+    errors = result.get("userErrors", [])
+    if errors:
+        raise HTTPException(status_code=400, detail=errors[0].get("message", "Could not update cart note"))
+    cart = result.get("cart")
+    if not cart:
+        raise HTTPException(status_code=404, detail="Cart not found")
+    return transform_cart(cart)
+
+
 @api_router.post("/cart/create")
 async def create_cart(req: CreateCartReq):
     lines = [{"merchandiseId": line.variantId, "quantity": line.quantity} for line in req.lines]

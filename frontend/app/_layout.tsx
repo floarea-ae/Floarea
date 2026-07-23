@@ -9,6 +9,7 @@ import { CartProvider } from '../src/context/CartContext';
 import { WishlistProvider } from '../src/context/WishlistContext';
 import { registerForPushNotifications, registerTokenWithBackend, useNotificationListeners } from '../src/notifications';
 import { prefetchHomepageLayout } from '../src/services/homepage';
+import { useCartSync } from '../src/hooks/useCartSync';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -28,6 +29,15 @@ function PushNotificationHandler() {
   }, [shopifyToken]);
 
   useNotificationListeners();
+  return null;
+}
+
+// Only ever mounted once AuthProvider has passed its isAuthReady gate below
+// (it renders this splash-screen-guarded children tree, not a sibling of
+// it) — so shopifyToken already reflects the current session the first time
+// useCartSync's effect can possibly run.
+function CartSyncHandler() {
+  useCartSync();
   return null;
 }
 
@@ -56,6 +66,7 @@ export default function RootLayout() {
       <WishlistProvider>
         <AuthProvider>
           <PushNotificationHandler />
+          <CartSyncHandler />
           <StatusBar style="dark" />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
